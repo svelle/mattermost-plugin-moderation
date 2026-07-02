@@ -38,10 +38,6 @@ type Plugin struct {
 
 	backgroundJob *cluster.Job
 
-	// reportsLock guards read-modify-write cycles on per-channel report lists
-	// and moderator lists.
-	reportsLock sync.Mutex
-
 	// configurationLock synchronizes access to the configuration.
 	configurationLock sync.RWMutex
 
@@ -95,6 +91,24 @@ func (p *Plugin) OnDeactivate() error {
 
 func (p *Plugin) now() int64 {
 	return model.GetMillis()
+}
+
+// Cluster mutex key prefixes for channel-scoped read-modify-write cycles.
+const (
+	lockPrefixReports    = "lock_reports_"
+	lockPrefixModerators = "lock_mods_"
+)
+
+// lockChannel acquires a cluster-wide mutex for a channel-scoped KV value,
+// keeping read-modify-write cycles safe across nodes in HA deployments. The
+// returned function releases the lock.
+func (p *Plugin) lockChannel(prefix, channelID string) (func(), error) {
+	mutex, err := cluster.NewMutex(p.API, prefix+channelID)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create cluster mutex")
+	}
+	mutex.Lock()
+	return mutex.Unlock, nil
 }
 
 // See https://developers.mattermost.com/extend/plugins/server/reference/

@@ -1,9 +1,10 @@
-import React, {useState} from 'react';
+import React, {useCallback, useState} from 'react';
 import {useDispatch} from 'react-redux';
 
 import {closeTimeoutModal, submitTimeout} from '../../actions';
 import {TIMEOUT_DURATIONS} from '../../types';
 import type {TimeoutModalState} from '../../types';
+import {useEscape} from '../hooks';
 import Icon from '../icons';
 import {C} from '../styles';
 
@@ -13,10 +14,25 @@ type Props = {
 
 const TimeoutModal = ({modal}: Props) => {
     const dispatch = useDispatch();
-    const dispatchThunk = dispatch as (action: unknown) => void;
+    const dispatchThunk = dispatch as (action: unknown) => Promise<unknown>;
     const [duration, setDuration] = useState<string | null>(null);
+    const [submitting, setSubmitting] = useState(false);
 
-    const close = () => dispatch(closeTimeoutModal());
+    const close = useCallback(() => dispatch(closeTimeoutModal()), [dispatch]);
+    useEscape(close);
+
+    const canSubmit = Boolean(duration) && !submitting;
+    const submit = async () => {
+        if (!duration || submitting) {
+            return;
+        }
+        setSubmitting(true);
+        try {
+            await dispatchThunk(submitTimeout(modal, duration));
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     return (
         <div
@@ -26,6 +42,7 @@ const TimeoutModal = ({modal}: Props) => {
             <div
                 onClick={(e) => e.stopPropagation()}
                 role='dialog'
+                aria-modal='true'
                 aria-label={`Timeout ${modal.targetName}`}
                 style={{width: 440, maxWidth: 'calc(100vw - 32px)', background: C.centerBg, color: C.fg1, borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.24)', padding: '22px 24px'}}
             >
@@ -79,11 +96,11 @@ const TimeoutModal = ({modal}: Props) => {
                         {'Cancel'}
                     </button>
                     <button
-                        onClick={() => duration && dispatchThunk(submitTimeout(modal, duration))}
-                        disabled={!duration}
-                        style={{height: 40, padding: '0 18px', borderRadius: 4, background: duration ? C.buttonBg : C.border2, color: '#fff', border: 'none', cursor: duration ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: 14, fontFamily: 'inherit'}}
+                        onClick={submit}
+                        disabled={!canSubmit}
+                        style={{height: 40, padding: '0 18px', borderRadius: 4, background: canSubmit ? C.buttonBg : C.border2, color: '#fff', border: 'none', cursor: canSubmit ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: 14, fontFamily: 'inherit'}}
                     >
-                        {'Apply timeout'}
+                        {submitting ? 'Applying…' : 'Apply timeout'}
                     </button>
                 </div>
             </div>

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, {useCallback, useState} from 'react';
 import {useDispatch} from 'react-redux';
 
 import {closeConfirmModal, runConfirmAction} from '../../actions';
 import type {ConfirmModalState} from '../../types';
+import {useEscape} from '../hooks';
 import Icon from '../icons';
 import {C} from '../styles';
 
@@ -13,7 +14,17 @@ type Props = {
 const ConfirmModal = ({modal}: Props) => {
     const dispatch = useDispatch();
     const dispatchThunk = dispatch as (action: unknown) => void;
-    const close = () => dispatch(closeConfirmModal());
+    const [confirming, setConfirming] = useState(false);
+    const close = useCallback(() => dispatch(closeConfirmModal()), [dispatch]);
+    useEscape(close);
+
+    const confirm = () => {
+        if (confirming) {
+            return;
+        }
+        setConfirming(true);
+        dispatchThunk(runConfirmAction(modal.action));
+    };
 
     return (
         <div
@@ -23,6 +34,7 @@ const ConfirmModal = ({modal}: Props) => {
             <div
                 onClick={(e) => e.stopPropagation()}
                 role='dialog'
+                aria-modal='true'
                 aria-label={modal.title}
                 style={{width: 432, maxWidth: 'calc(100vw - 32px)', background: C.centerBg, color: C.fg1, borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.24)', padding: '22px 24px'}}
             >
@@ -47,8 +59,9 @@ const ConfirmModal = ({modal}: Props) => {
                         {'Cancel'}
                     </button>
                     <button
-                        onClick={() => dispatchThunk(runConfirmAction(modal.action))}
-                        style={{height: 40, padding: '0 18px', borderRadius: 4, background: C.red500, color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, fontFamily: 'inherit'}}
+                        onClick={confirm}
+                        disabled={confirming}
+                        style={{height: 40, padding: '0 18px', borderRadius: 4, background: C.red500, color: '#fff', border: 'none', cursor: confirming ? 'default' : 'pointer', opacity: confirming ? 0.7 : 1, fontWeight: 600, fontSize: 14, fontFamily: 'inherit'}}
                     >
                         {modal.confirmLabel}
                     </button>

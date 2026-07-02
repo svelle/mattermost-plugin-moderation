@@ -14,8 +14,10 @@ type StateWithPlugin = GlobalState & {
     [key: string]: unknown;
 };
 
-export const pluginState = (state: GlobalState): ModerationState => {
-    return (state as StateWithPlugin)[`plugins-${manifest.id}`] as ModerationState;
+// The slice can be absent before the reducer registers, so the return type
+// is honest about nullability — callers use optional chaining.
+export const pluginState = (state: GlobalState): ModerationState | undefined => {
+    return (state as StateWithPlugin)[`plugins-${manifest.id}`] as ModerationState | undefined;
 };
 
 export const getCurrentChannelId = (state: GlobalState): string => {

@@ -1,9 +1,10 @@
-import React, {useState} from 'react';
+import React, {useCallback, useState} from 'react';
 import {useDispatch} from 'react-redux';
 
 import {closeReportModal, submitReport} from '../../actions';
 import {REPORT_REASONS} from '../../types';
 import type {ReportModalState} from '../../types';
+import {useEscape} from '../hooks';
 import Icon from '../icons';
 import {C} from '../styles';
 
@@ -13,12 +14,27 @@ type Props = {
 
 const ReportModal = ({modal}: Props) => {
     const dispatch = useDispatch();
-    const dispatchThunk = dispatch as (action: unknown) => void;
+    const dispatchThunk = dispatch as (action: unknown) => Promise<unknown>;
     const [reason, setReason] = useState<string | null>(null);
     const [note, setNote] = useState('');
+    const [submitting, setSubmitting] = useState(false);
 
-    const close = () => dispatch(closeReportModal());
+    const close = useCallback(() => dispatch(closeReportModal()), [dispatch]);
+    useEscape(close);
     const isMessage = Boolean(modal.postId);
+
+    const canSubmit = Boolean(reason) && !submitting;
+    const submit = async () => {
+        if (!reason || submitting) {
+            return;
+        }
+        setSubmitting(true);
+        try {
+            await dispatchThunk(submitReport(modal, reason, note));
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     return (
         <div
@@ -28,6 +44,7 @@ const ReportModal = ({modal}: Props) => {
             <div
                 onClick={(e) => e.stopPropagation()}
                 role='dialog'
+                aria-modal='true'
                 aria-label={isMessage ? 'Report this message' : `Report ${modal.targetName}`}
                 style={{width: 480, maxWidth: 'calc(100vw - 32px)', maxHeight: '88vh', overflowY: 'auto', background: C.centerBg, color: C.fg1, borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.24)', padding: '22px 24px'}}
             >
@@ -126,11 +143,11 @@ const ReportModal = ({modal}: Props) => {
                         {'Cancel'}
                     </button>
                     <button
-                        onClick={() => reason && dispatchThunk(submitReport(modal, reason, note))}
-                        disabled={!reason}
-                        style={{height: 40, padding: '0 18px', borderRadius: 4, background: reason ? C.buttonBg : C.border2, color: '#fff', border: 'none', cursor: reason ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: 14, fontFamily: 'inherit'}}
+                        onClick={submit}
+                        disabled={!canSubmit}
+                        style={{height: 40, padding: '0 18px', borderRadius: 4, background: canSubmit ? C.buttonBg : C.border2, color: '#fff', border: 'none', cursor: canSubmit ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: 14, fontFamily: 'inherit'}}
                     >
-                        {'Submit report'}
+                        {submitting ? 'Submitting…' : 'Submit report'}
                     </button>
                 </div>
             </div>

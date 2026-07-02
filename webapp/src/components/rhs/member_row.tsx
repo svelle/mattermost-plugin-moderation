@@ -4,6 +4,7 @@ import {useDispatch} from 'react-redux';
 import {confirmBan, confirmRemove, liftRestrictions, openTimeoutModal, setModerator, unbanUser} from '../../actions';
 import type {MemberInfo} from '../../types';
 import Avatar from '../avatar';
+import {useEscape} from '../hooks';
 import Icon from '../icons';
 import {C} from '../styles';
 
@@ -24,6 +25,7 @@ const MemberRow = ({member, channelId, currentUserId}: Props) => {
     const dispatch = useDispatch();
     const dispatchThunk = dispatch as (action: unknown) => void;
     const [menuOpen, setMenuOpen] = useState(false);
+    useEscape(() => setMenuOpen(false), menuOpen);
 
     let tag = {label: 'Member', bg: C.bg3, color: C.fg2};
     if (member.is_banned) {
@@ -114,6 +116,8 @@ const MemberRow = ({member, channelId, currentUserId}: Props) => {
                     onClick={() => setMenuOpen(!menuOpen)}
                     style={{width: 30, height: 30, border: 'none', background: menuOpen ? C.bg3 : 'transparent', borderRadius: 5, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.fg2, fontSize: 17}}
                     aria-label={`Member actions for ${member.display_name}`}
+                    aria-haspopup='menu'
+                    aria-expanded={menuOpen}
                 >
                     <i className='icon icon-dots-vertical'/>
                 </button>
@@ -124,10 +128,16 @@ const MemberRow = ({member, channelId, currentUserId}: Props) => {
                         onClick={() => setMenuOpen(false)}
                         style={{position: 'fixed', inset: 0, zIndex: 10}}
                     />
-                    <div style={{position: 'absolute', right: 6, top: 44, width: 210, background: C.centerBg, border: `1px solid ${C.border2}`, borderRadius: 8, boxShadow: '0 6px 14px rgba(0,0,0,0.12)', padding: 6, zIndex: 20}}>
-                        {items.map((item) => (
+                    <div
+                        role='menu'
+                        aria-label={`Member actions for ${member.display_name}`}
+                        style={{position: 'absolute', right: 6, top: 44, width: 210, background: C.centerBg, border: `1px solid ${C.border2}`, borderRadius: 8, boxShadow: '0 6px 14px rgba(0,0,0,0.12)', padding: 6, zIndex: 20}}
+                    >
+                        {items.map((item, index) => (
                             <button
                                 key={item.label}
+                                role='menuitem'
+                                autoFocus={index === 0}
                                 onClick={() => {
                                     setMenuOpen(false);
                                     item.onClick();

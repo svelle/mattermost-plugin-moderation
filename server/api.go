@@ -255,9 +255,10 @@ func (p *Plugin) decodeMemberAction(w http.ResponseWriter, r *http.Request) (*me
 	return &req, true
 }
 
-// resolveActionedReport resolves the report a queue action was taken from,
-// or every open report against the member when the action came from a
-// message menu or the members tab.
+// resolveActionedReport resolves the specific report a queue action was
+// taken from; actions initiated from a message menu or the members tab carry
+// no report ID and leave the queue untouched (except bans, which resolve all
+// of the member's open reports in banUser).
 func (p *Plugin) resolveActionedReport(req *memberActionRequest, actorID, resolution string) {
 	if req.ReportID != "" {
 		if _, err := p.updateReportStatus(req.ChannelID, req.ReportID, kvstore.ReportStatusResolved, resolution, actorID); err != nil {

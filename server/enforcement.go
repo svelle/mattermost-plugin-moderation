@@ -46,9 +46,17 @@ func (p *Plugin) ReactionHasBeenAdded(_ *plugin.Context, reaction *model.Reactio
 	if err != nil {
 		return
 	}
-	restriction, err := p.kvstore.GetRestriction(post.ChannelId, reaction.UserId)
-	if err != nil || !restriction.Active(p.now()) {
-		return
+	banned := false
+	if ban, banErr := p.kvstore.GetBan(reaction.UserId); banErr == nil && ban != nil {
+		// Same fallback as MessageWillBePosted: banned members can't react
+		// even if their account was reactivated outside the plugin.
+		banned = true
+	}
+	if !banned {
+		restriction, rErr := p.kvstore.GetRestriction(post.ChannelId, reaction.UserId)
+		if rErr != nil || !restriction.Active(p.now()) {
+			return
+		}
 	}
 	if err := p.client.Post.RemoveReaction(reaction); err != nil {
 		p.API.LogError("Failed to remove restricted member's reaction", "user_id", reaction.UserId, "error", err.Error())
@@ -60,14 +68,21 @@ func (p *Plugin) ReactionHasBeenAdded(_ *plugin.Context, reaction *model.Reactio
 	})
 }
 
+func plural(n int64, unit string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", unit)
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
+}
+
 func remainingLabel(millis int64) string {
 	minutes := (millis + 59999) / 60000
 	switch {
 	case minutes < 60:
-		return fmt.Sprintf("%d minutes", minutes)
+		return plural(minutes, "minute")
 	case minutes < 48*60:
-		return fmt.Sprintf("%d hours", (minutes+59)/60)
+		return plural((minutes+59)/60, "hour")
 	default:
-		return fmt.Sprintf("%d days", (minutes+24*60-1)/(24*60))
+		return plural((minutes+24*60-1)/(24*60), "day")
 	}
 }

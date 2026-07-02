@@ -69,8 +69,11 @@ func (p *Plugin) createReport(reporterID, channelID, postID, targetID, reasonID,
 		UpdateAt:       p.now(),
 	}
 
-	p.reportsLock.Lock()
-	defer p.reportsLock.Unlock()
+	unlock, err := p.lockChannel(lockPrefixReports, channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	reports, err := p.kvstore.GetReports(channelID)
 	if err != nil {
 		return nil, err
@@ -81,7 +84,7 @@ func (p *Plugin) createReport(reporterID, channelID, postID, targetID, reasonID,
 	if err := p.checkReportRateLimit(reporterID); err != nil {
 		return nil, err
 	}
-	reports = append([]*kvstore.Report{report}, reports...)
+	reports = capReports(append([]*kvstore.Report{report}, reports...))
 	if err := p.kvstore.SaveReports(channelID, reports); err != nil {
 		return nil, err
 	}
@@ -90,6 +93,40 @@ func (p *Plugin) createReport(reporterID, channelID, postID, targetID, reasonID,
 	p.notifyModeratorsOfReport(report)
 
 	return report, nil
+}
+
+// maxStoredReports caps how many reports are kept per channel so the KV
+// value doesn't grow unbounded; the oldest resolved reports are dropped
+// first, and open reports are only dropped once nothing resolved is left.
+const maxStoredReports = 200
+
+func capReports(reports []*kvstore.Report) []*kvstore.Report {
+	over := len(reports) - maxStoredReports
+	if over <= 0 {
+		return reports
+	}
+	drop := make(map[int]bool, over)
+	// Reports are newest-first, so walk from the end (oldest) dropping
+	// resolved ones, then oldest of any status if still over the cap.
+	for i := len(reports) - 1; i >= 0 && over > 0; i-- {
+		if reports[i].Status == kvstore.ReportStatusResolved {
+			drop[i] = true
+			over--
+		}
+	}
+	for i := len(reports) - 1; i >= 0 && over > 0; i-- {
+		if !drop[i] {
+			drop[i] = true
+			over--
+		}
+	}
+	kept := make([]*kvstore.Report, 0, maxStoredReports)
+	for i, r := range reports {
+		if !drop[i] {
+			kept = append(kept, r)
+		}
+	}
+	return kept
 }
 
 // hasDuplicateReport reports whether the reporter already has an unresolved
@@ -144,8 +181,11 @@ func (p *Plugin) checkReportRateLimit(reporterID string) error {
 // updateReportStatus moves a report to a new status with a human-readable
 // resolution such as "Dismissed by @jess".
 func (p *Plugin) updateReportStatus(channelID, reportID, status, resolution, actorID string) (*kvstore.Report, error) {
-	p.reportsLock.Lock()
-	defer p.reportsLock.Unlock()
+	unlock, err := p.lockChannel(lockPrefixReports, channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	reports, err := p.kvstore.GetReports(channelID)
 	if err != nil {
@@ -175,8 +215,12 @@ func (p *Plugin) updateReportStatus(channelID, reportID, status, resolution, act
 // resolveOpenReportsForUser resolves every open or escalated report against a
 // member in a channel, used when a moderation action settles the matter.
 func (p *Plugin) resolveOpenReportsForUser(channelID, targetID, resolution, actorID string) {
-	p.reportsLock.Lock()
-	defer p.reportsLock.Unlock()
+	unlock, err := p.lockChannel(lockPrefixReports, channelID)
+	if err != nil {
+		p.API.LogError("Failed to lock reports", "channel_id", channelID, "error", err.Error())
+		return
+	}
+	defer unlock()
 
 	reports, err := p.kvstore.GetReports(channelID)
 	if err != nil {
@@ -206,10 +250,13 @@ func (p *Plugin) resolveOpenReportsForUser(channelID, targetID, resolution, acto
 // escalateReportsForUser marks a member's open reports as escalated and
 // notifies the admins.
 func (p *Plugin) escalateReportsForUser(channelID, targetID, actorID string) error {
-	p.reportsLock.Lock()
+	unlock, err := p.lockChannel(lockPrefixReports, channelID)
+	if err != nil {
+		return err
+	}
 	reports, err := p.kvstore.GetReports(channelID)
 	if err != nil {
-		p.reportsLock.Unlock()
+		unlock()
 		return err
 	}
 	for _, r := range reports {
@@ -219,11 +266,11 @@ func (p *Plugin) escalateReportsForUser(channelID, targetID, actorID string) err
 		}
 	}
 	if err := p.kvstore.SaveReports(channelID, reports); err != nil {
-		p.reportsLock.Unlock()
+		unlock()
 		return err
 	}
 	p.publishReportsChanged(channelID, reports)
-	p.reportsLock.Unlock()
+	unlock()
 
 	p.notifyAdminsOfEscalation(channelID, targetID, actorID)
 	return nil

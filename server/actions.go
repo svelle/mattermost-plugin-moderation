@@ -27,6 +27,13 @@ const bannedMessagePlaceholder = "*Message hidden — this member was banned fro
 // hiding a banned member's messages.
 const tombstoneScanLimit = 500
 
+// memberScanPages and memberScanPageSize bound the unfiltered members-tab
+// scan; channels beyond this size should rely on the members search.
+const (
+	memberScanPages    = 5
+	memberScanPageSize = 200
+)
+
 func (p *Plugin) muteUser(actorID, channelID, targetID string) error {
 	if err := p.checkCanActOn(actorID, targetID, channelID); err != nil {
 		return err
@@ -114,6 +121,13 @@ func (p *Plugin) deletePostAsModerator(actorID, postID string) error {
 	if !p.isModerator(actorID, post.ChannelId) {
 		return errors.New("you don't have permission to moderate this channel")
 	}
+	// The same outranking rules as user-targeted actions apply: moderators
+	// can't delete messages written by admins or fellow moderators.
+	if post.UserId != actorID {
+		if err := p.checkCanActOn(actorID, post.UserId, post.ChannelId); err != nil {
+			return err
+		}
+	}
 	if err := p.client.Post.DeletePost(postID); err != nil {
 		return errors.Wrap(err, "failed to delete message")
 	}
@@ -151,7 +165,12 @@ func (p *Plugin) banUser(actorID, channelID, targetID string) error {
 		ByUserID: actorID,
 		CreateAt: p.now(),
 	}); err != nil {
-		return err
+		// Keep account state and ban record consistent: reactivate rather
+		// than leave the member deactivated without a plugin ban record.
+		if rbErr := p.client.User.UpdateActive(targetID, true); rbErr != nil {
+			p.API.LogError("Failed to roll back deactivation after ban record failure", "user_id", targetID, "error", rbErr.Error())
+		}
+		return errors.Wrap(err, "failed to record ban")
 	}
 
 	p.resolveOpenReportsForUser(channelID, targetID, "Member banned", actorID)
@@ -172,7 +191,12 @@ func (p *Plugin) unbanUser(actorID, channelID, targetID string) error {
 		return errors.Wrap(err, "failed to reactivate member")
 	}
 	if err := p.kvstore.DeleteBan(targetID); err != nil {
-		return err
+		// Keep account state and ban record consistent: deactivate again
+		// rather than leave the member active while still recorded as banned.
+		if rbErr := p.client.User.UpdateActive(targetID, false); rbErr != nil {
+			p.API.LogError("Failed to roll back reactivation after unban record failure", "user_id", targetID, "error", rbErr.Error())
+		}
+		return errors.Wrap(err, "failed to clear ban record")
 	}
 	p.publishMembersChanged(channelID)
 	return nil
@@ -208,10 +232,13 @@ func (p *Plugin) setModerator(actorID, channelID, targetID string, moderator boo
 		return errors.New("bots can't be moderators")
 	}
 
-	p.reportsLock.Lock()
+	unlock, err := p.lockChannel(lockPrefixModerators, channelID)
+	if err != nil {
+		return err
+	}
 	moderators, err := p.kvstore.GetModerators(channelID)
 	if err != nil {
-		p.reportsLock.Unlock()
+		unlock()
 		return err
 	}
 	updated := make([]string, 0, len(moderators)+1)
@@ -224,7 +251,7 @@ func (p *Plugin) setModerator(actorID, channelID, targetID string, moderator boo
 		updated = append(updated, targetID)
 	}
 	err = p.kvstore.SaveModerators(channelID, updated)
-	p.reportsLock.Unlock()
+	unlock()
 	if err != nil {
 		return err
 	}
@@ -262,7 +289,13 @@ func (p *Plugin) hideMessagesFromUser(channelID, targetID, mode string) {
 			}
 			tombstone := post.Clone()
 			tombstone.Message = bannedMessagePlaceholder
-			tombstone.AddProp("community_moderation_tombstone", true)
+
+			// Strip attachments, embeds, and other rich content so the
+			// tombstone doesn't keep rendering the banned member's media.
+			tombstone.FileIds = nil
+			tombstone.Hashtags = ""
+			tombstone.Metadata = nil
+			tombstone.SetProps(model.StringInterface{"community_moderation_tombstone": true})
 			if err := p.client.Post.UpdatePost(tombstone); err != nil {
 				p.API.LogError("Failed to tombstone banned member's post", "post_id", post.Id, "error", err.Error())
 			}
@@ -297,9 +330,15 @@ func (p *Plugin) listMembers(channelID, term string) ([]*MemberInfo, error) {
 	}
 	var users []*model.User
 	if term == "" {
-		users, err = p.client.User.ListInChannel(channelID, model.ChannelSortByUsername, 0, 200)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to list channel members")
+		for page := range memberScanPages {
+			batch, listErr := p.client.User.ListInChannel(channelID, model.ChannelSortByUsername, page, memberScanPageSize)
+			if listErr != nil {
+				return nil, errors.Wrap(listErr, "failed to list channel members")
+			}
+			users = append(users, batch...)
+			if len(batch) < memberScanPageSize {
+				break
+			}
 		}
 	} else {
 		users, err = p.client.User.Search(&model.UserSearch{
@@ -321,8 +360,8 @@ func (p *Plugin) listMembers(channelID, term string) ([]*MemberInfo, error) {
 		moderatorSet[id] = true
 	}
 	channelAdminSet := map[string]bool{}
-	for page := range 4 {
-		channelMembers, listErr := p.client.Channel.ListMembers(channelID, page, 200)
+	for page := range memberScanPages {
+		channelMembers, listErr := p.client.Channel.ListMembers(channelID, page, memberScanPageSize)
 		if listErr != nil || len(channelMembers) == 0 {
 			break
 		}
@@ -331,7 +370,7 @@ func (p *Plugin) listMembers(channelID, term string) ([]*MemberInfo, error) {
 				channelAdminSet[member.UserId] = true
 			}
 		}
-		if len(channelMembers) < 200 {
+		if len(channelMembers) < memberScanPageSize {
 			break
 		}
 	}

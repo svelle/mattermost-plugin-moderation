@@ -29,10 +29,39 @@ func TestServeHTTPAuthorizationRequired(t *testing.T) {
 func TestRemainingLabel(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal("5 minutes", remainingLabel(5*60*1000))
-	assert.Equal("1 minutes", remainingLabel(30*1000))
-	assert.Equal("1 hours", remainingLabel(60*60*1000))
+	assert.Equal("1 minute", remainingLabel(30*1000))
+	assert.Equal("1 hour", remainingLabel(60*60*1000))
 	assert.Equal("24 hours", remainingLabel(24*60*60*1000))
 	assert.Equal("7 days", remainingLabel(7*24*60*60*1000))
+}
+
+func TestCapReports(t *testing.T) {
+	assert := assert.New(t)
+
+	small := []*kvstore.Report{{ID: "a"}, {ID: "b"}}
+	assert.Equal(small, capReports(small))
+
+	// Newest-first list one over the cap: the oldest resolved goes first.
+	reports := make([]*kvstore.Report, 0, maxStoredReports+1)
+	for i := 0; i <= maxStoredReports; i++ {
+		status := kvstore.ReportStatusOpen
+		if i == 10 || i == maxStoredReports {
+			status = kvstore.ReportStatusResolved
+		}
+		reports = append(reports, &kvstore.Report{ID: string(rune('a' + (i % 26))), Status: status, CreateAt: int64(-i)})
+	}
+	capped := capReports(reports)
+	assert.Len(capped, maxStoredReports)
+	assert.Equal(reports[:maxStoredReports], capped, "the oldest resolved report should be dropped")
+
+	// All open: the oldest reports are dropped once nothing resolved is left.
+	allOpen := make([]*kvstore.Report, 0, maxStoredReports+5)
+	for i := range maxStoredReports + 5 {
+		allOpen = append(allOpen, &kvstore.Report{Status: kvstore.ReportStatusOpen, CreateAt: int64(-i)})
+	}
+	cappedOpen := capReports(allOpen)
+	assert.Len(cappedOpen, maxStoredReports)
+	assert.Equal(allOpen[:maxStoredReports], cappedOpen)
 }
 
 func TestTruncate(t *testing.T) {

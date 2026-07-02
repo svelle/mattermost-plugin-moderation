@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
@@ -74,6 +75,12 @@ func (p *Plugin) createReport(reporterID, channelID, postID, targetID, reasonID,
 	if err != nil {
 		return nil, err
 	}
+	if hasDuplicateReport(reports, reporterID, targetID, postID) {
+		return nil, errors.New("you've already reported this — it's in the moderation team's queue")
+	}
+	if err := p.checkReportRateLimit(reporterID); err != nil {
+		return nil, err
+	}
 	reports = append([]*kvstore.Report{report}, reports...)
 	if err := p.kvstore.SaveReports(channelID, reports); err != nil {
 		return nil, err
@@ -83,6 +90,55 @@ func (p *Plugin) createReport(reporterID, channelID, postID, targetID, reasonID,
 	p.notifyModeratorsOfReport(report)
 
 	return report, nil
+}
+
+// hasDuplicateReport reports whether the reporter already has an unresolved
+// report for the same message — or, for member reports, the same member —
+// so repeat submissions don't pile up in the queue.
+func hasDuplicateReport(reports []*kvstore.Report, reporterID, targetID, postID string) bool {
+	for _, r := range reports {
+		if r.ReporterUserID != reporterID || r.TargetUserID != targetID || r.Status == kvstore.ReportStatusResolved {
+			continue
+		}
+		if r.PostID == postID {
+			return true
+		}
+	}
+	return false
+}
+
+// pruneStamps keeps only timestamps at or after the cutoff.
+func pruneStamps(stamps []int64, cutoff int64) []int64 {
+	recent := make([]int64, 0, len(stamps))
+	for _, stamp := range stamps {
+		if stamp >= cutoff {
+			recent = append(recent, stamp)
+		}
+	}
+	return recent
+}
+
+// checkReportRateLimit enforces a rolling per-member cap on report
+// submissions and records the new submission when it's allowed.
+func (p *Plugin) checkReportRateLimit(reporterID string) error {
+	config := p.getConfiguration()
+	if config.ReportRateLimit <= 0 {
+		return nil
+	}
+	stamps, err := p.kvstore.GetReportStamps(reporterID)
+	if err != nil {
+		return err
+	}
+	window := time.Duration(config.ReportRateWindowMinutes) * time.Minute
+	recent := pruneStamps(stamps, p.now()-window.Milliseconds())
+	if len(recent) >= config.ReportRateLimit {
+		return errors.Errorf(
+			"you've submitted %d reports in the last %d minutes, which is the limit — please give the moderation team a moment to catch up",
+			len(recent), config.ReportRateWindowMinutes,
+		)
+	}
+	recent = append(recent, p.now())
+	return p.kvstore.SaveReportStamps(reporterID, recent)
 }
 
 // updateReportStatus moves a report to a new status with a human-readable

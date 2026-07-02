@@ -30,6 +30,20 @@
                 "help_text": "When a member is banned, hide their recent messages in the channel where the ban was issued."
             },
             {
+                "key": "ReportRateLimit",
+                "display_name": "Maximum reports per member",
+                "type": "number",
+                "default": 5,
+                "help_text": "How many reports one member can submit within the time window below. Reports beyond the limit are rejected with a friendly message. Set to 0 to disable rate limiting."
+            },
+            {
+                "key": "ReportRateWindowMinutes",
+                "display_name": "Report rate limit window (minutes)",
+                "type": "number",
+                "default": 10,
+                "help_text": "The rolling time window used for the report rate limit."
+            },
+            {
                 "key": "BannedMessageMode",
                 "display_name": "Banned message display",
                 "type": "radio",

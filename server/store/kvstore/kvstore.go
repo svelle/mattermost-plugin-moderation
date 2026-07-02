@@ -8,6 +8,10 @@ type KVStore interface {
 	GetReports(channelID string) ([]*Report, error)
 	SaveReports(channelID string, reports []*Report) error
 
+	// Report timestamps per reporter, used for rate limiting.
+	GetReportStamps(userID string) ([]int64, error)
+	SaveReportStamps(userID string, stamps []int64) error
+
 	GetRestriction(channelID, userID string) (*Restriction, error)
 	SetRestriction(channelID, userID string, restriction *Restriction) error
 	DeleteRestriction(channelID, userID string) error

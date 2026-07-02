@@ -8,6 +8,7 @@ A Mattermost plugin that adds community moderation tools directly to the channel
 
 - **Report a message or a member** from the message menu or a member's profile popover. Pick a reason (spam or scam, harassment or abuse, impersonation, inappropriate content, or something else) and add optional context for the moderation team.
 - Reports are private: the reported member never sees who submitted them.
+- **Abuse protection**: reports are rate limited per member (5 per 10 minutes by default, configurable), and re-reporting the same message or member while a report is still open is rejected — so nobody can flood the moderation queue.
 
 ### For moderators
 
@@ -32,6 +33,7 @@ Under **System Console → Plugins → Community Moderation**:
 
 - **Hide messages from banned members** — when a member is banned, hide their recent messages in the channel where the ban was issued.
 - **Banned message display** — show a placeholder ("Message hidden — this member was banned from the server.") in place of each hidden message, or remove the messages entirely.
+- **Maximum reports per member** and **report rate limit window** — the rolling per-member cap on report submissions (default 5 per 10 minutes; set the cap to 0 to disable).
 
 ## Roles
 

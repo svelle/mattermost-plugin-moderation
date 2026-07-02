@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/svelle/mattermost-plugin-moderation/server/store/kvstore"
 )
 
 func TestServeHTTPAuthorizationRequired(t *testing.T) {
@@ -37,4 +39,34 @@ func TestTruncate(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal("short", truncate("short", 10))
 	assert.Equal("aaaa…", truncate("aaaaaaaaaa", 5))
+}
+
+func TestPruneStamps(t *testing.T) {
+	assert := assert.New(t)
+	assert.Empty(pruneStamps(nil, 100))
+	assert.Equal([]int64{100, 150}, pruneStamps([]int64{50, 99, 100, 150}, 100))
+	assert.Empty(pruneStamps([]int64{1, 2, 3}, 100))
+}
+
+func TestHasDuplicateReport(t *testing.T) {
+	assert := assert.New(t)
+	reports := []*kvstore.Report{
+		{ReporterUserID: "alice", TargetUserID: "rex", PostID: "post1", Status: kvstore.ReportStatusOpen},
+		{ReporterUserID: "alice", TargetUserID: "sam", PostID: "", Status: kvstore.ReportStatusResolved},
+		{ReporterUserID: "bob", TargetUserID: "rex", PostID: "", Status: kvstore.ReportStatusOpen},
+	}
+
+	// Same reporter, same post: duplicate.
+	assert.True(hasDuplicateReport(reports, "alice", "rex", "post1"))
+
+	// Same reporter, different post or a member report: allowed.
+	assert.False(hasDuplicateReport(reports, "alice", "rex", "post2"))
+	assert.False(hasDuplicateReport(reports, "alice", "rex", ""))
+
+	// Resolved reports don't block a new one.
+	assert.False(hasDuplicateReport(reports, "alice", "sam", ""))
+
+	// Different reporters don't collide.
+	assert.False(hasDuplicateReport(reports, "alice", "bob", "post1"))
+	assert.True(hasDuplicateReport(reports, "bob", "rex", ""))
 }

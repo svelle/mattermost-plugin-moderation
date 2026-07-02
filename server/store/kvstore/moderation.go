@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	reportsKeyPrefix     = "reports_"
-	restrictionKeyPrefix = "restrict_"
-	banKeyPrefix         = "ban_"
-	moderatorsKeyPrefix  = "mods_"
+	reportsKeyPrefix      = "reports_"
+	reportStampsKeyPrefix = "ratelimit_report_"
+	restrictionKeyPrefix  = "restrict_"
+	banKeyPrefix          = "ban_"
+	moderatorsKeyPrefix   = "mods_"
 )
 
 type Client struct {
@@ -35,6 +36,21 @@ func (kv Client) GetReports(channelID string) ([]*Report, error) {
 func (kv Client) SaveReports(channelID string, reports []*Report) error {
 	if _, err := kv.client.KV.Set(reportsKeyPrefix+channelID, reports); err != nil {
 		return errors.Wrap(err, "failed to save reports")
+	}
+	return nil
+}
+
+func (kv Client) GetReportStamps(userID string) ([]int64, error) {
+	var stamps []int64
+	if err := kv.client.KV.Get(reportStampsKeyPrefix+userID, &stamps); err != nil {
+		return nil, errors.Wrap(err, "failed to get report stamps")
+	}
+	return stamps, nil
+}
+
+func (kv Client) SaveReportStamps(userID string, stamps []int64) error {
+	if _, err := kv.client.KV.Set(reportStampsKeyPrefix+userID, stamps); err != nil {
+		return errors.Wrap(err, "failed to save report stamps")
 	}
 	return nil
 }

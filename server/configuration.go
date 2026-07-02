@@ -32,6 +32,13 @@ type configuration struct {
 	// "placeholder" replaces the message text with a tombstone, "remove"
 	// deletes the messages entirely.
 	BannedMessageMode string
+
+	// ReportRateLimit is the maximum number of reports one member can
+	// submit within ReportRateWindowMinutes. Zero disables rate limiting.
+	ReportRateLimit int
+
+	// ReportRateWindowMinutes is the rolling window for ReportRateLimit.
+	ReportRateWindowMinutes int
 }
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
@@ -50,8 +57,10 @@ func (p *Plugin) getConfiguration() *configuration {
 
 	if p.configuration == nil {
 		return &configuration{
-			HideBannedMessages: true,
-			BannedMessageMode:  BannedMessageModePlaceholder,
+			HideBannedMessages:      true,
+			BannedMessageMode:       BannedMessageModePlaceholder,
+			ReportRateLimit:         5,
+			ReportRateWindowMinutes: 10,
 		}
 	}
 
@@ -96,6 +105,12 @@ func (p *Plugin) OnConfigurationChange() error {
 
 	if configuration.BannedMessageMode != BannedMessageModeRemove {
 		configuration.BannedMessageMode = BannedMessageModePlaceholder
+	}
+	if configuration.ReportRateLimit < 0 {
+		configuration.ReportRateLimit = 5
+	}
+	if configuration.ReportRateWindowMinutes <= 0 {
+		configuration.ReportRateWindowMinutes = 10
 	}
 
 	p.setConfiguration(configuration)

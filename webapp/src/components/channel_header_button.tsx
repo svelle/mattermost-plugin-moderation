@@ -1,25 +1,18 @@
-import React, {useEffect} from 'react';
-import {useDispatch, useSelector} from 'react-redux';
+import React from 'react';
+import {useSelector} from 'react-redux';
 
 import type {GlobalState} from '@mattermost/types/store';
 
 import Icon from './icons';
 
-import {fetchStatus} from '../actions';
-import {getCurrentChannelId, getStatusForCurrentChannel} from '../selectors';
+import {getStatusForCurrentChannel} from '../selectors';
 
-// ChannelHeaderButton is the shield icon in the channel header. It also
-// keeps the per-channel moderation status fresh: it is always mounted, so it
-// refetches whenever the user switches channels.
+// ChannelHeaderButton is the shield icon in the channel header, with a badge
+// for open reports. Purely presentational — the webapp doesn't render it at
+// all when the app bar is enabled, so status fetching lives in
+// ModerationRoot, which is always mounted.
 const ChannelHeaderButton = () => {
-    const dispatch = useDispatch();
-    const channelId = useSelector((state: GlobalState) => getCurrentChannelId(state));
     const status = useSelector((state: GlobalState) => getStatusForCurrentChannel(state));
-
-    useEffect(() => {
-        // @ts-expect-error thunk actions are supported by the webapp store
-        dispatch(fetchStatus(channelId));
-    }, [channelId, dispatch]);
 
     return (
         <span style={{position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>

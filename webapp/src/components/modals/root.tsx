@@ -1,5 +1,5 @@
-import React from 'react';
-import {useSelector} from 'react-redux';
+import React, {useEffect} from 'react';
+import {useDispatch, useSelector} from 'react-redux';
 
 import type {GlobalState} from '@mattermost/types/store';
 
@@ -7,14 +7,25 @@ import ConfirmModal from './confirm_modal';
 import ReportModal from './report_modal';
 import TimeoutModal from './timeout_modal';
 
-import {pluginState} from '../../selectors';
+import {fetchStatus} from '../../actions';
+import {getCurrentChannelId, pluginState} from '../../selectors';
 import Icon from '../icons';
 import {C} from '../styles';
 
 // ModerationRoot renders the plugin's modals and the toast. It is registered
-// as a root component so it lives above the channel view.
+// as a root component so it lives above the channel view. Because it is
+// always mounted — unlike the channel header button, which the webapp does
+// not render when the app bar is enabled — it also owns keeping the
+// per-channel moderation status fresh as the user switches channels.
 const ModerationRoot = () => {
+    const dispatch = useDispatch();
+    const channelId = useSelector((s: GlobalState) => getCurrentChannelId(s));
     const state = useSelector((s: GlobalState) => pluginState(s));
+
+    useEffect(() => {
+        // @ts-expect-error thunk actions are supported by the webapp store
+        dispatch(fetchStatus(channelId));
+    }, [channelId, dispatch]);
 
     if (!state) {
         return null;

@@ -1,8 +1,17 @@
 import React from 'react';
 
+const DEFAULT_VIEWBOX = '0 0 24 24';
+
 // Material Design Icon paths matching the glyphs used in the design.
-const PATHS: Record<string, string> = {
+// Entries may override the viewBox for glyphs from other icon sets.
+const PATHS: Record<string, string | {d: string; viewBox: string}> = {
     shield: 'M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1Z',
+
+    // Material Symbols "shield person" — the plugin's identity icon.
+    'shield-person': {
+        viewBox: '0 -960 960 960',
+        d: 'M485-240Zm26 80H160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440v80q-56 0-111 13.5T260-306q-9 5-14.5 14t-5.5 20v32h245q4 21 10.5 41t15.5 39Zm209 80q-73-18-116.5-80T560-298v-102l160-80 160 80v102q0 76-43.5 138T720-80Zm0-84q38-18 59-55t21-79v-52l-80-40-80 40v52q0 42 21 79t59 55ZM367-527q-47-47-47-113t47-113q47-47 113-47t113 47q47 47 47 113t-47 113q-47 47-113 47t-113-47Zm169.5-56.5Q560-607 560-640t-23.5-56.5Q513-720 480-720t-56.5 23.5Q400-673 400-640t23.5 56.5Q447-560 480-560t56.5-23.5ZM480-640Zm240 363Z',
+    },
     flag: 'M14.4,6L14,4H5V21H7V14H12.6L13,16H20V6H14.4Z',
     clock: 'M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12.5,7H11V13L15.75,15.85L16.5,14.62L12.5,12.25V7Z',
     'volume-off': 'M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.46 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L12,10.73M19,12C19,12.94 18.8,13.82 18.46,14.64L19.97,16.15C20.62,14.91 21,13.5 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.5,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z',
@@ -25,14 +34,16 @@ type Props = {
 };
 
 const Icon = ({name, size = 16, color = 'currentColor', style}: Props) => {
-    const path = PATHS[name] || PATHS.shield;
+    const entry = PATHS[name] || PATHS.shield;
+    const d = typeof entry === 'string' ? entry : entry.d;
+    const viewBox = typeof entry === 'string' ? DEFAULT_VIEWBOX : entry.viewBox;
     return (
         <svg
-            viewBox='0 0 24 24'
+            viewBox={viewBox}
             style={{width: size, height: size, fill: color, flexShrink: 0, ...style}}
             aria-hidden='true'
         >
-            <path d={path}/>
+            <path d={d}/>
         </svg>
     );
 };

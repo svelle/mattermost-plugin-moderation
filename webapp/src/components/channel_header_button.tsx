@@ -6,6 +6,8 @@ import type {GlobalState} from '@mattermost/types/store';
 import {fetchStatus} from '../actions';
 import {getCurrentChannelId, getStatusForCurrentChannel} from '../selectors';
 
+import Icon from './icons';
+
 // ChannelHeaderButton is the shield icon in the channel header. It also
 // keeps the per-channel moderation status fresh: it is always mounted, so it
 // refetches whenever the user switches channels.
@@ -21,9 +23,11 @@ const ChannelHeaderButton = () => {
 
     return (
         <span style={{position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>
-            <i
-                className='icon icon-shield-outline'
-                style={{fontSize: 18, lineHeight: 1}}
+            {/* currentColor keeps the icon matched to the user's theme in
+                both the header button and the app bar. */}
+            <Icon
+                name='shield-person'
+                size={18}
             />
             {status.is_moderator && status.open_report_count > 0 && (
                 <span

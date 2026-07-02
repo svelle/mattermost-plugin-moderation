@@ -41,7 +41,7 @@ const RHSPanel = () => {
         return (
             <div style={{padding: '32px 24px', textAlign: 'center', color: C.fg3, fontSize: 13, lineHeight: 1.5}}>
                 <Icon
-                    name='shield'
+                    name='shield-person'
                     size={32}
                     color={C.fg3}
                     style={{marginBottom: 10}}

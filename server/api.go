@@ -179,7 +179,7 @@ func (p *Plugin) handleListMembers(w http.ResponseWriter, r *http.Request) {
 		p.writeError(w, http.StatusForbidden, "Only admins can manage members.")
 		return
 	}
-	members, err := p.listMembers(channelID)
+	members, err := p.listMembers(channelID, r.URL.Query().Get("q"))
 	if err != nil {
 		p.writeError(w, http.StatusInternalServerError, "Failed to load members.")
 		return

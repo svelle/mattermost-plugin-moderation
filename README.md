@@ -22,7 +22,7 @@ A Mattermost plugin that adds community moderation tools directly to the channel
 
 Admins (system admins and team admins) can do everything moderators can, plus:
 
-- **Members & roles tab** in the moderation panel: assign or remove channel moderators, lift mutes and timeouts, remove members from the channel, and ban or unban members.
+- **Members & roles tab** in the moderation panel: assign or remove channel moderators, lift mutes and timeouts, remove members from the channel, and ban or unban members. The list shows members with an elevated role or an active restriction; a search box finds any other channel member to elevate or manage.
 - **Ban from server**: deactivates the account so the member can't sign back in. Bans can be reversed from the member list.
 - Moderators can **escalate** reports to admins, which notifies every system admin by DM.
 

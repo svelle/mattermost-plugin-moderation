@@ -65,8 +65,9 @@ export const fetchReports = (channelId: string) => {
     return doFetch<Report[]>(`${apiUrl()}/channel/${channelId}/reports`);
 };
 
-export const fetchMembers = (channelId: string) => {
-    return doFetch<MemberInfo[]>(`${apiUrl()}/channel/${channelId}/members`);
+export const fetchMembers = (channelId: string, term?: string) => {
+    const query = term ? `?q=${encodeURIComponent(term)}` : '';
+    return doFetch<MemberInfo[]>(`${apiUrl()}/channel/${channelId}/members${query}`);
 };
 
 export const createReport = (report: {channel_id: string; post_id?: string; target_user_id: string; reason: string; note: string}) => {

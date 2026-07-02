@@ -3,7 +3,7 @@ import {useDispatch, useSelector} from 'react-redux';
 
 import type {GlobalState} from '@mattermost/types/store';
 
-import MemberRow from './member_row';
+import MembersTab from './members_tab';
 import ReportCard from './report_card';
 
 import {fetchMembers, fetchReports, setRHSTab} from '../../actions';
@@ -20,7 +20,6 @@ const RHSPanel = () => {
     const currentUserId = useSelector((state: GlobalState) => getCurrentUserId(state));
     const status = useSelector((state: GlobalState) => getStatusForCurrentChannel(state));
     const reports = useSelector((state: GlobalState) => pluginState(state)?.reports[channelId]);
-    const members = useSelector((state: GlobalState) => pluginState(state)?.members[channelId]);
     let tab = useSelector((state: GlobalState) => pluginState(state)?.rhsTab || 'reports');
     if (tab === 'members' && !status.is_admin) {
         tab = 'reports';
@@ -121,19 +120,10 @@ const RHSPanel = () => {
             )}
 
             {tab === 'members' && (
-                <div style={{flex: 1, overflowY: 'auto', padding: '12px 12px'}}>
-                    <div style={{fontSize: 12, color: C.fg3, lineHeight: 1.4, padding: '2px 4px 12px'}}>
-                        {'Assign moderators and manage members without opening the System Console.'}
-                    </div>
-                    {(members || []).map((member) => (
-                        <MemberRow
-                            key={member.user_id}
-                            member={member}
-                            channelId={channelId}
-                            currentUserId={currentUserId}
-                        />
-                    ))}
-                </div>
+                <MembersTab
+                    channelId={channelId}
+                    currentUserId={currentUserId}
+                />
             )}
         </div>
     );

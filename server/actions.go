@@ -286,14 +286,31 @@ type MemberInfo struct {
 	TimeoutLabel string `json:"timeout_label,omitempty"`
 }
 
-func (p *Plugin) listMembers(channelID string) ([]*MemberInfo, error) {
+// listMembers returns the members-tab view of a channel. Without a search
+// term it lists only members who need attention — moderators, admins, and
+// members who are banned, muted, or timed out. With a term it searches all
+// channel members so admins can find anyone to elevate or manage.
+func (p *Plugin) listMembers(channelID, term string) ([]*MemberInfo, error) {
 	channel, err := p.client.Channel.Get(channelID)
 	if err != nil {
 		return nil, errors.Wrap(err, "channel not found")
 	}
-	users, err := p.client.User.ListInChannel(channelID, model.ChannelSortByUsername, 0, 200)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to list channel members")
+	var users []*model.User
+	if term == "" {
+		users, err = p.client.User.ListInChannel(channelID, model.ChannelSortByUsername, 0, 200)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list channel members")
+		}
+	} else {
+		users, err = p.client.User.Search(&model.UserSearch{
+			Term:          term,
+			InChannelId:   channelID,
+			AllowInactive: true,
+			Limit:         20,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to search channel members")
+		}
 	}
 	moderators, err := p.kvstore.GetModerators(channelID)
 	if err != nil {
@@ -343,6 +360,11 @@ func (p *Plugin) listMembers(channelID string) ([]*MemberInfo, error) {
 				info.TimeoutUntil = restriction.TimeoutUntil
 				info.TimeoutLabel = restriction.TimeoutLabel
 			}
+		}
+		// The unfiltered listing only surfaces members with an elevated role
+		// or an active moderation flag; everyone else is found via search.
+		if term == "" && !info.IsModerator && !info.IsBanned && !info.Muted && info.TimeoutUntil == 0 {
+			continue
 		}
 		members = append(members, info)
 	}

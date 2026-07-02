@@ -1,10 +1,10 @@
 {
-    "id": "com.mattermost.plugin-starter-template",
-    "name": "Plugin Starter Template",
-    "description": "This plugin serves as a starting point for writing a Mattermost plugin.",
-    "homepage_url": "https://github.com/mattermost/mattermost-plugin-starter-template",
-    "support_url": "https://github.com/mattermost/mattermost-plugin-starter-template/issues",
-    "icon_path": "assets/starter-template-icon.svg",
+    "id": "com.mattermost.community-moderation",
+    "name": "Community Moderation",
+    "description": "Community moderation tools for Mattermost — member reporting, a moderation queue, mutes, timeouts, warnings, and member management without the System Console.",
+    "homepage_url": "https://github.com/svelle/mattermost-plugin-moderation",
+    "support_url": "https://github.com/svelle/mattermost-plugin-moderation/issues",
+    "icon_path": "assets/icon.svg",
     "min_server_version": "6.2.1",
     "server": {
         "executables": {
@@ -19,8 +19,47 @@
         "bundle_path": "webapp/dist/main.js"
     },
     "settings_schema": {
-        "header": "",
+        "header": "Moderation behavior",
         "footer": "",
-        "settings": []
+        "settings": [
+            {
+                "key": "HideBannedMessages",
+                "display_name": "Hide messages from banned members",
+                "type": "bool",
+                "default": true,
+                "help_text": "When a member is banned, hide their recent messages in the channel where the ban was issued."
+            },
+            {
+                "key": "ReportRateLimit",
+                "display_name": "Maximum reports per member",
+                "type": "number",
+                "default": 5,
+                "help_text": "How many reports one member can submit within the time window below. Reports beyond the limit are rejected with a friendly message. Set to 0 to disable rate limiting."
+            },
+            {
+                "key": "ReportRateWindowMinutes",
+                "display_name": "Report rate limit window (minutes)",
+                "type": "number",
+                "default": 10,
+                "help_text": "The rolling time window used for the report rate limit."
+            },
+            {
+                "key": "BannedMessageMode",
+                "display_name": "Banned message display",
+                "type": "radio",
+                "default": "placeholder",
+                "options": [
+                    {
+                        "display_name": "Show placeholder",
+                        "value": "placeholder"
+                    },
+                    {
+                        "display_name": "Remove completely",
+                        "value": "remove"
+                    }
+                ],
+                "help_text": "Show a placeholder in place of each hidden message, or remove the messages entirely."
+            }
+        ]
     }
 }

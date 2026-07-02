@@ -1,6 +1,28 @@
 package kvstore
 
+// KVStore is the data-access layer for all moderation state kept in the
+// plugin KV store. Reports are stored as one list per channel, restrictions
+// (mutes and timeouts) per channel and user, bans per user, and the
+// moderator list per channel.
 type KVStore interface {
-	// Define your methods here. This package is used to access the KVStore pluginapi methods.
-	GetTemplateData(userID string) (string, error)
+	GetReports(channelID string) ([]*Report, error)
+	SaveReports(channelID string, reports []*Report) error
+
+	// Report timestamps per reporter, used for rate limiting.
+	GetReportStamps(userID string) ([]int64, error)
+	SaveReportStamps(userID string, stamps []int64) error
+
+	GetRestriction(channelID, userID string) (*Restriction, error)
+	SetRestriction(channelID, userID string, restriction *Restriction) error
+	DeleteRestriction(channelID, userID string) error
+	ListRestrictionKeys(page, perPage int) (keys []string, hasMore bool, err error)
+	GetRestrictionByKey(key string) (*Restriction, error)
+	DeleteByKey(key string) error
+
+	GetBan(userID string) (*Ban, error)
+	SetBan(userID string, ban *Ban) error
+	DeleteBan(userID string) error
+
+	GetModerators(channelID string) ([]string, error)
+	SaveModerators(channelID string, userIDs []string) error
 }

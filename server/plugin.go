@@ -1,7 +1,6 @@
 package main
 
 import (
-	"net/http"
 	"sync"
 	"time"
 
@@ -12,8 +11,13 @@ import (
 	"github.com/mattermost/mattermost/server/public/pluginapi/cluster"
 	"github.com/pkg/errors"
 
-	"github.com/mattermost/mattermost-plugin-starter-template/server/command"
-	"github.com/mattermost/mattermost-plugin-starter-template/server/store/kvstore"
+	"github.com/svelle/mattermost-plugin-moderation/server/store/kvstore"
+)
+
+const (
+	botUsername    = "community-moderation"
+	botDisplayName = "Community Moderation"
+	botDescription = "Bot for the Community Moderation plugin. Sends moderation notices."
 )
 
 // Plugin implements the interface expected by the Mattermost server to communicate between the server and plugin processes.
@@ -26,8 +30,8 @@ type Plugin struct {
 	// client is the Mattermost server API client.
 	client *pluginapi.Client
 
-	// commandClient is the client used to register and execute slash commands.
-	commandClient command.Command
+	// botUserID is the user ID of the plugin bot used for moderation notices.
+	botUserID string
 
 	// router is the HTTP router for handling API requests.
 	router *mux.Router
@@ -48,13 +52,21 @@ func (p *Plugin) OnActivate() error {
 
 	p.kvstore = kvstore.NewKVStore(p.client)
 
-	p.commandClient = command.NewCommandHandler(p.client)
+	botUserID, err := p.client.Bot.EnsureBot(&model.Bot{
+		Username:    botUsername,
+		DisplayName: botDisplayName,
+		Description: botDescription,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to ensure moderation bot")
+	}
+	p.botUserID = botUserID
 
 	p.router = p.initRouter()
 
 	job, err := cluster.Schedule(
 		p.API,
-		"BackgroundJob",
+		"CleanupExpiredTimeouts",
 		cluster.MakeWaitForRoundedInterval(1*time.Hour),
 		p.runJob,
 	)
@@ -77,13 +89,26 @@ func (p *Plugin) OnDeactivate() error {
 	return nil
 }
 
-// This will execute the commands that were registered in the NewCommandHandler function.
-func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
-	response, err := p.commandClient.Handle(args)
+func (p *Plugin) now() int64 {
+	return model.GetMillis()
+}
+
+// Cluster mutex key prefixes for channel-scoped read-modify-write cycles.
+const (
+	lockPrefixReports    = "lock_reports_"
+	lockPrefixModerators = "lock_mods_"
+)
+
+// lockChannel acquires a cluster-wide mutex for a channel-scoped KV value,
+// keeping read-modify-write cycles safe across nodes in HA deployments. The
+// returned function releases the lock.
+func (p *Plugin) lockChannel(prefix, channelID string) (func(), error) {
+	mutex, err := cluster.NewMutex(p.API, prefix+channelID)
 	if err != nil {
-		return nil, model.NewAppError("ExecuteCommand", "plugin.command.execute_command.app_error", nil, err.Error(), http.StatusInternalServerError)
+		return nil, errors.Wrap(err, "failed to create cluster mutex")
 	}
-	return response, nil
+	mutex.Lock()
+	return mutex.Unlock, nil
 }
 
 // See https://developers.mattermost.com/extend/plugins/server/reference/

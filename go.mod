@@ -1,4 +1,4 @@
-module github.com/mattermost/mattermost-plugin-starter-template
+module github.com/svelle/mattermost-plugin-moderation
 
 go 1.25
 

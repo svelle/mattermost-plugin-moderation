@@ -6,6 +6,12 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Banned message display modes.
+const (
+	BannedMessageModePlaceholder = "placeholder"
+	BannedMessageModeRemove      = "remove"
+)
+
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
 // configuration, as well as values computed from the configuration. Any public fields will be
 // deserialized from the Mattermost server configuration in OnConfigurationChange.
@@ -17,7 +23,16 @@ import (
 //
 // If you add non-reference types to your configuration struct, be sure to rewrite Clone as a deep
 // copy appropriate for your types.
-type configuration struct{}
+type configuration struct {
+	// HideBannedMessages hides a banned member's recent messages in the
+	// channel where the ban was issued.
+	HideBannedMessages bool
+
+	// BannedMessageMode controls how hidden messages are displayed:
+	// "placeholder" replaces the message text with a tombstone, "remove"
+	// deletes the messages entirely.
+	BannedMessageMode string
+}
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
 // your configuration has reference types.
@@ -34,7 +49,10 @@ func (p *Plugin) getConfiguration() *configuration {
 	defer p.configurationLock.RUnlock()
 
 	if p.configuration == nil {
-		return &configuration{}
+		return &configuration{
+			HideBannedMessages: true,
+			BannedMessageMode:  BannedMessageModePlaceholder,
+		}
 	}
 
 	return p.configuration
@@ -74,6 +92,10 @@ func (p *Plugin) OnConfigurationChange() error {
 	// Load the public configuration fields from the Mattermost server configuration.
 	if err := p.API.LoadPluginConfiguration(configuration); err != nil {
 		return errors.Wrap(err, "failed to load plugin configuration")
+	}
+
+	if configuration.BannedMessageMode != BannedMessageModeRemove {
+		configuration.BannedMessageMode = BannedMessageModePlaceholder
 	}
 
 	p.setConfiguration(configuration)

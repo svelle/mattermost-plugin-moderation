@@ -6,6 +6,7 @@ import React from 'react';
 import type {Store} from 'redux';
 
 import type {Post} from '@mattermost/types/posts';
+import type {ProductScope} from '@mattermost/types/products';
 import type {GlobalState} from '@mattermost/types/store';
 import type {UserProfile} from '@mattermost/types/users';
 
@@ -24,6 +25,7 @@ import {
 } from './actions';
 import {setBasePath} from './client';
 import ChannelHeaderButton from './components/channel_header_button';
+import {SHIELD_PERSON} from './components/icons';
 import ModerationRoot from './components/modals/root';
 import RHSPanel from './components/rhs';
 import PopoverUserActions from './components/user_actions';
@@ -60,6 +62,22 @@ export default class Plugin {
             'Moderation',
             'Community moderation',
         );
+
+        // The app bar renders plugin icons on a fixed light circle, so it
+        // needs a self-contained image with an explicit fill rather than the
+        // theme-following channel header icon. Registering it also stops the
+        // app bar from reusing the channel header button as a fallback.
+        if (typeof registry.registerAppBarComponent === 'function') {
+            const appBarIconUrl = `data:image/svg+xml,${encodeURIComponent(
+                `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${SHIELD_PERSON.viewBox}" fill="#1c58d9"><path d="${SHIELD_PERSON.d}"/></svg>`,
+            )}`;
+            registry.registerAppBarComponent(
+                appBarIconUrl,
+                () => store.dispatch(toggleRHSPlugin),
+                'Community moderation',
+                null as unknown as ProductScope,
+            );
+        }
 
         registry.registerRootComponent(ModerationRoot);
         registry.registerPopoverUserActionsComponent(PopoverUserActions);

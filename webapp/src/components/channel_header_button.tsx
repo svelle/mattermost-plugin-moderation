@@ -3,10 +3,10 @@ import {useDispatch, useSelector} from 'react-redux';
 
 import type {GlobalState} from '@mattermost/types/store';
 
+import Icon from './icons';
+
 import {fetchStatus} from '../actions';
 import {getCurrentChannelId, getStatusForCurrentChannel} from '../selectors';
-
-import Icon from './icons';
 
 // ChannelHeaderButton is the shield icon in the channel header. It also
 // keeps the per-channel moderation status fresh: it is always mounted, so it

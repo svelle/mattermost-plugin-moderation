@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {useDispatch, useSelector} from 'react-redux';
 
 import type {GlobalState} from '@mattermost/types/store';
@@ -23,6 +23,52 @@ const displayNameOf = (user: UserProfile): string => {
     return fullName || `@${user.username}`;
 };
 
+type RowProps = {
+    icon: string;
+    label: string;
+    danger?: boolean;
+    onClick: () => void;
+};
+
+// MenuRow mimics the native profile popover rows: transparent background
+// with a hover highlight, regular-weight text, and a dimmed icon. Color is
+// reserved for destructive actions, and only on the text and icon.
+const MenuRow = ({icon, label, danger, onClick}: RowProps) => {
+    const [hover, setHover] = useState(false);
+    return (
+        <button
+            onClick={onClick}
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => setHover(false)}
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                width: '100%',
+                height: 32,
+                padding: '0 12px',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontSize: 14,
+                fontWeight: 400,
+                textAlign: 'left',
+                background: hover ? C.bg3 : 'transparent',
+                color: danger ? C.danger : C.fg1,
+            }}
+        >
+            <span style={{display: 'inline-flex', opacity: danger ? 1 : 0.64}}>
+                <Icon
+                    name={icon}
+                    size={16}
+                />
+            </span>
+            <span style={{overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{label}</span>
+        </button>
+    );
+};
+
 // PopoverUserActions adds the moderation actions from the design's profile
 // popover: report for everyone, mute/timeout/warn/escalate for moderators,
 // and remove/ban for admins.
@@ -43,104 +89,56 @@ const PopoverUserActions = ({user, hide}: Props) => {
         dispatchThunk(action);
     };
 
-    const buttonStyle = (danger?: boolean): React.CSSProperties => ({
-        display: 'flex',
-        alignItems: 'center',
-        gap: 9,
-        width: '100%',
-        height: 34,
-        padding: '0 12px',
-        borderRadius: 5,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        fontSize: 13,
-        fontWeight: 600,
-        background: danger ? C.redTint : C.bg3,
-        color: danger ? C.danger : C.fg1,
-        border: 'none',
-        marginTop: 6,
-    });
-
     return (
-        <div style={{padding: '4px 0'}}>
-            <button
-                style={buttonStyle(true)}
+        <div style={{marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border1}`}}>
+            <div style={{padding: '0 12px 4px', fontSize: 10, fontWeight: 600, letterSpacing: 0.6, color: C.fg3}}>
+                {'MODERATION'}
+            </div>
+            <MenuRow
+                icon='flag'
+                label={`Report ${name}`}
+                danger={true}
                 onClick={() => run(openReportModal({channelId, targetUserId: user.id, targetName: name}))}
-            >
-                <Icon
-                    name='flag'
-                    size={16}
-                />
-                <span>{'Report '}{name}</span>
-            </button>
+            />
             {status.is_moderator && (
                 <>
-                    <button
-                        style={buttonStyle()}
+                    <MenuRow
+                        icon='volume-off'
+                        label='Mute in channel'
                         onClick={() => run(muteUser(channelId, user.id, name))}
-                    >
-                        <Icon
-                            name='volume-off'
-                            size={16}
-                        />
-                        <span>{'Mute in channel'}</span>
-                    </button>
-                    <button
-                        style={buttonStyle()}
+                    />
+                    <MenuRow
+                        icon='clock'
+                        label='Timeout…'
                         onClick={() => run(openTimeoutModal({channelId, targetUserId: user.id, targetName: name}))}
-                    >
-                        <Icon
-                            name='clock'
-                            size={16}
-                        />
-                        <span>{'Timeout…'}</span>
-                    </button>
-                    <button
-                        style={buttonStyle()}
+                    />
+                    <MenuRow
+                        icon='alert-circle-outline'
+                        label={`Warn ${name}`}
                         onClick={() => run(warnUser(channelId, user.id, name))}
-                    >
-                        <Icon
-                            name='alert-circle-outline'
-                            size={16}
-                        />
-                        <span>{'Warn '}{name}</span>
-                    </button>
+                    />
                 </>
             )}
             {status.is_moderator && !status.is_admin && (
-                <button
-                    style={buttonStyle()}
+                <MenuRow
+                    icon='arrow-up'
+                    label='Escalate to admin'
                     onClick={() => run(escalateUser(channelId, user.id))}
-                >
-                    <Icon
-                        name='arrow-up'
-                        size={16}
-                    />
-                    <span>{'Escalate to admin'}</span>
-                </button>
+                />
             )}
             {status.is_admin && (
                 <>
-                    <button
-                        style={buttonStyle()}
+                    <MenuRow
+                        icon='close'
+                        label='Remove from channel'
                         onClick={() => run(confirmRemove(channelId, user.id, name))}
-                    >
-                        <Icon
-                            name='close'
-                            size={16}
-                        />
-                        <span>{'Remove from channel'}</span>
-                    </button>
-                    <button
-                        style={buttonStyle(true)}
+                    />
+                    <MenuRow
+                        icon='cancel'
+                        label='Ban from server'
+                        danger={true}
                         onClick={() => run(confirmBan(channelId, user.id, name))}
-                    >
-                        <Icon
-                            name='cancel'
-                            size={16}
-                        />
-                        <span>{'Ban from server'}</span>
-                    </button>
+                    />
                 </>
             )}
         </div>

@@ -24,6 +24,10 @@ export type ChannelModerationStatus = {
     is_moderator: boolean;
     is_admin: boolean;
     open_report_count: number;
+
+    // The current user's own restriction in the channel.
+    muted?: boolean;
+    timeout_until?: number;
 };
 
 export type MemberInfo = {

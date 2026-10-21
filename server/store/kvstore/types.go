@@ -55,8 +55,12 @@ func (r *Restriction) Active(nowMillis int64) bool {
 }
 
 // Ban is a server-wide ban. Banned members are deactivated and can't sign in.
+// ChannelID and TeamID record where the ban was issued; bans recorded before
+// they were added leave them empty.
 type Ban struct {
-	UserID   string `json:"user_id"`
-	ByUserID string `json:"by_user_id"`
-	CreateAt int64  `json:"create_at"`
+	UserID    string `json:"user_id"`
+	ByUserID  string `json:"by_user_id"`
+	ChannelID string `json:"channel_id,omitempty"`
+	TeamID    string `json:"team_id,omitempty"`
+	CreateAt  int64  `json:"create_at"`
 }

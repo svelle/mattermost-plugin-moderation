@@ -23,6 +23,9 @@ var timeoutDurations = map[string]struct {
 
 const bannedMessagePlaceholder = "*Message hidden — this member was banned from the server.*"
 
+// tombstoneProp marks a message replaced with bannedMessagePlaceholder.
+const tombstoneProp = "community_moderation_tombstone"
+
 // tombstoneScanLimit bounds how many recent channel posts are scanned when
 // hiding a banned member's messages.
 const tombstoneScanLimit = 500
@@ -35,7 +38,7 @@ const (
 )
 
 func (p *Plugin) muteUser(actorID, channelID, targetID string) error {
-	if err := p.checkCanActOn(actorID, targetID, channelID); err != nil {
+	if err := p.checkCanModerateMember(actorID, targetID, channelID); err != nil {
 		return err
 	}
 	restriction, err := p.kvstore.GetRestriction(channelID, targetID)
@@ -60,7 +63,7 @@ func (p *Plugin) muteUser(actorID, channelID, targetID string) error {
 }
 
 func (p *Plugin) timeoutUser(actorID, channelID, targetID, durationID string) (string, error) {
-	if err := p.checkCanActOn(actorID, targetID, channelID); err != nil {
+	if err := p.checkCanModerateMember(actorID, targetID, channelID); err != nil {
 		return "", err
 	}
 	duration, ok := timeoutDurations[durationID]
@@ -94,6 +97,13 @@ func (p *Plugin) liftRestrictions(actorID, channelID, targetID string) error {
 	if !p.isModerator(actorID, channelID) {
 		return errors.New("you don't have permission to moderate this channel")
 	}
+	restriction, err := p.kvstore.GetRestriction(channelID, targetID)
+	if err != nil {
+		return err
+	}
+	if !restriction.Active(p.now()) {
+		return errors.New("this member has no active mute or timeout in this channel")
+	}
 	if err := p.kvstore.DeleteRestriction(channelID, targetID); err != nil {
 		return err
 	}
@@ -103,7 +113,7 @@ func (p *Plugin) liftRestrictions(actorID, channelID, targetID string) error {
 }
 
 func (p *Plugin) warnUser(actorID, channelID, targetID string) error {
-	if err := p.checkCanActOn(actorID, targetID, channelID); err != nil {
+	if err := p.checkCanModerateMember(actorID, targetID, channelID); err != nil {
 		return err
 	}
 	p.dmFromBot(targetID, fmt.Sprintf(
@@ -113,23 +123,25 @@ func (p *Plugin) warnUser(actorID, channelID, targetID string) error {
 	return nil
 }
 
-func (p *Plugin) deletePostAsModerator(actorID, postID string) error {
+// deletePostAsModerator deletes a message and returns the channel it was in.
+func (p *Plugin) deletePostAsModerator(actorID, postID string) (string, error) {
 	post, err := p.client.Post.GetPost(postID)
 	if err != nil {
-		return errors.Wrap(err, "message not found")
+		return "", errors.New("message not found")
 	}
 	if !p.isModerator(actorID, post.ChannelId) {
-		return errors.New("you don't have permission to moderate this channel")
+		return "", errors.New("you don't have permission to moderate this channel")
 	}
 	// The same outranking rules as user-targeted actions apply: moderators
 	// can't delete messages written by admins or fellow moderators.
 	if post.UserId != actorID {
 		if err := p.checkCanActOn(actorID, post.UserId, post.ChannelId); err != nil {
-			return err
+			return "", err
 		}
 	}
 	if err := p.client.Post.DeletePost(postID); err != nil {
-		return errors.Wrap(err, "failed to delete message")
+		p.API.LogError("Failed to delete message", "post_id", postID, "error", err.Error())
+		return "", errors.New("failed to delete message")
 	}
 	if post.UserId != actorID {
 		p.dmFromBot(post.UserId, fmt.Sprintf(
@@ -137,7 +149,7 @@ func (p *Plugin) deletePostAsModerator(actorID, postID string) error {
 			p.channelLink(post.ChannelId), truncate(post.Message, maxExcerptLength),
 		))
 	}
-	return nil
+	return post.ChannelId, nil
 }
 
 // banUser deactivates the member server-wide, resolves their open reports in
@@ -147,7 +159,7 @@ func (p *Plugin) banUser(actorID, channelID, targetID string) error {
 	if !p.isAdmin(actorID, channelID) {
 		return errors.New("only admins can ban members")
 	}
-	if err := p.checkCanActOn(actorID, targetID, channelID); err != nil {
+	if err := p.checkCanModerateMember(actorID, targetID, channelID); err != nil {
 		return err
 	}
 	target, err := p.client.User.Get(targetID)
@@ -160,10 +172,16 @@ func (p *Plugin) banUser(actorID, channelID, targetID string) error {
 	if err := p.client.User.UpdateActive(targetID, false); err != nil {
 		return errors.Wrap(err, "failed to deactivate member")
 	}
+	teamID := ""
+	if channel, chErr := p.client.Channel.Get(channelID); chErr == nil {
+		teamID = channel.TeamId
+	}
 	if err := p.kvstore.SetBan(targetID, &kvstore.Ban{
-		UserID:   targetID,
-		ByUserID: actorID,
-		CreateAt: p.now(),
+		UserID:    targetID,
+		ByUserID:  actorID,
+		ChannelID: channelID,
+		TeamID:    teamID,
+		CreateAt:  p.now(),
 	}); err != nil {
 		// Keep account state and ban record consistent: reactivate rather
 		// than leave the member deactivated without a plugin ban record.
@@ -183,9 +201,22 @@ func (p *Plugin) banUser(actorID, channelID, targetID string) error {
 	return nil
 }
 
+// unbanUser reverses a ban issued through the plugin. Accounts deactivated
+// any other way are left alone — reactivating them is a System Console
+// decision, not something a team admin should be able to do from a channel.
 func (p *Plugin) unbanUser(actorID, channelID, targetID string) error {
 	if !p.isAdmin(actorID, channelID) {
 		return errors.New("only admins can unban members")
+	}
+	ban, err := p.kvstore.GetBan(targetID)
+	if err != nil {
+		return err
+	}
+	if ban == nil {
+		return errors.New("this member wasn't banned with the moderation tools, so they can only be reactivated from the System Console")
+	}
+	if !p.canUnban(actorID, ban) {
+		return errors.New("only a system admin or an admin of the team where the ban was issued can lift it")
 	}
 	if err := p.client.User.UpdateActive(targetID, true); err != nil {
 		return errors.Wrap(err, "failed to reactivate member")
@@ -202,11 +233,20 @@ func (p *Plugin) unbanUser(actorID, channelID, targetID string) error {
 	return nil
 }
 
+// canUnban reports whether the actor may lift a ban: system admins always
+// can, team admins only for bans issued in their own team.
+func (p *Plugin) canUnban(actorID string, ban *kvstore.Ban) bool {
+	if p.client.User.HasPermissionTo(actorID, model.PermissionManageSystem) {
+		return true
+	}
+	return ban.TeamID != "" && p.client.User.HasPermissionToTeam(actorID, ban.TeamID, model.PermissionManageTeam)
+}
+
 func (p *Plugin) removeFromChannel(actorID, channelID, targetID string) error {
 	if !p.isAdmin(actorID, channelID) {
 		return errors.New("only admins can remove members from the channel")
 	}
-	if err := p.checkCanActOn(actorID, targetID, channelID); err != nil {
+	if err := p.checkCanModerateMember(actorID, targetID, channelID); err != nil {
 		return err
 	}
 	if err := p.client.Channel.DeleteMember(channelID, targetID); err != nil {
@@ -230,6 +270,9 @@ func (p *Plugin) setModerator(actorID, channelID, targetID string, moderator boo
 	}
 	if target.IsBot {
 		return errors.New("bots can't be moderators")
+	}
+	if moderator && !p.isChannelMember(channelID, targetID) {
+		return errors.New("only members of this channel can be made moderators")
 	}
 
 	unlock, err := p.lockChannel(lockPrefixModerators, channelID)
@@ -278,7 +321,9 @@ func (p *Plugin) hideMessagesFromUser(channelID, targetID, mode string) {
 		}
 		for _, postID := range postList.Order {
 			post := postList.Posts[postID]
-			if post == nil || post.UserId != targetID || post.DeleteAt != 0 {
+			// System messages ("joined the channel") can't be edited and
+			// carry nothing the member wrote.
+			if post == nil || post.UserId != targetID || post.DeleteAt != 0 || post.IsSystemMessage() {
 				continue
 			}
 			if mode == BannedMessageModeRemove {
@@ -295,7 +340,7 @@ func (p *Plugin) hideMessagesFromUser(channelID, targetID, mode string) {
 			tombstone.FileIds = nil
 			tombstone.Hashtags = ""
 			tombstone.Metadata = nil
-			tombstone.SetProps(model.StringInterface{"community_moderation_tombstone": true})
+			tombstone.SetProps(model.StringInterface{tombstoneProp: true})
 			if err := p.client.Post.UpdatePost(tombstone); err != nil {
 				p.API.LogError("Failed to tombstone banned member's post", "post_id", post.Id, "error", err.Error())
 			}

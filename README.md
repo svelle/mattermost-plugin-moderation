@@ -19,23 +19,28 @@ A Mattermost plugin that adds community moderation tools directly to the channel
 - **Moderation panel** in the channel header (shield icon) with a live badge showing the number of open reports in the channel.
 - **Report queue**: every report shows its status (needs review, escalated, resolved), reason, reporter, the reported member, and an excerpt of the reported message. Act on a report directly from the card — timeout, mute, escalate to admins, or dismiss.
 - **Message actions** from any message's dropdown menu: mute in channel, timeout, warn, and delete message.
-- **Mutes and timeouts are enforced server-side.** Muted or timed-out members stay in the channel but can't post or react until the restriction ends; timeouts run for 5 minutes, 1 hour, 24 hours, or 7 days.
+- **Mutes and timeouts are enforced server-side.** Muted or timed-out members stay in the channel but can't post, edit their messages, or react until the restriction ends; timeouts run for 5 minutes, 1 hour, 24 hours, or 7 days. They're told why right under the message box, before anything is sent.
+- Muting or timing out a member from the queue resolves all of their open reports in the channel; deleting a message resolves every report about it.
+- Moderation actions only apply to members of the channel they're taken in.
 - **Warnings** are delivered as a direct message from the Community Moderation bot, as are notices about mutes, timeouts, and deleted messages.
 - New reports are DM'd to the channel's moderators (or to system admins when a channel has no moderators yet).
+- The queue lists reports that still need action first; resolved reports follow.
 
 | Report queue | Message actions for moderators |
 | --- | --- |
 | <img src="docs/screenshots/moderation-panel-report-queue.png" alt="Moderation panel with the report queue" width="720"> | <img src="docs/screenshots/moderator-message-actions.png" alt="Moderator message actions" width="720"> |
-| Timeout from a report | Notice sent to the timed-out member |
-| <img src="docs/screenshots/timeout-modal.png" alt="Timeout modal" width="720"> | <img src="docs/screenshots/timed-out-member-bot-notice.png" alt="Timeout notice DM from the bot" width="720"> |
+| Timeout from a report | Timed-out members see why they can't post |
+| <img src="docs/screenshots/timeout-modal.png" alt="Timeout modal" width="720"> | <img src="docs/screenshots/timed-out-member-blocked.png" alt="Timed-out member blocked from posting" width="720"> |
+| Notice sent to the timed-out member | New reports are DM'd to moderators |
+| <img src="docs/screenshots/timed-out-member-bot-notice.png" alt="Timeout notice DM from the bot" width="720"> | <img src="docs/screenshots/moderator-bot-notifications.png" alt="New report notifications from the bot" width="720"> |
 
 ### For admins
 
 Admins (system admins and team admins) can do everything moderators can, plus:
 
 - **Members & roles tab** in the moderation panel: assign or remove channel moderators, lift mutes and timeouts, remove members from the channel, and ban or unban members. The list shows members with an elevated role or an active restriction; a search box finds any other channel member to elevate or manage.
-- **Ban from server**: deactivates the account so the member can't sign back in. Bans can be reversed from the member list.
-- Moderators can **escalate** reports to admins, which notifies every system admin by DM.
+- **Ban from server**: deactivates the account so the member can't sign back in. Bans can be reversed from the member list by a system admin or an admin of the team where the ban was issued. Accounts deactivated outside the plugin can only be reactivated from the System Console.
+- Moderators can **escalate** a member's open reports to admins, which notifies every system admin by DM. Reports that are already escalated can't be escalated again.
 
 | Members & roles tab | Profile popover actions |
 | --- | --- |

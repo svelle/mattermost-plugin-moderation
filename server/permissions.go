@@ -77,3 +77,23 @@ func (p *Plugin) checkCanActOn(actorID, targetID, channelID string) error {
 	}
 	return nil
 }
+
+// checkCanModerateMember is checkCanActOn plus a channel membership check on
+// the target. Moderator status comes from a single channel, so actions that
+// reach the member directly (DMs, restrictions, bans) must stay scoped to
+// members of that channel — otherwise anyone who creates a channel could
+// moderate any account on the server.
+func (p *Plugin) checkCanModerateMember(actorID, targetID, channelID string) error {
+	if err := p.checkCanActOn(actorID, targetID, channelID); err != nil {
+		return err
+	}
+	if !p.isChannelMember(channelID, targetID) {
+		return errors.New("that person isn't a member of this channel")
+	}
+	return nil
+}
+
+func (p *Plugin) isChannelMember(channelID, userID string) bool {
+	_, err := p.client.Channel.GetMember(channelID, userID)
+	return err == nil
+}

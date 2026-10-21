@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
+	"unicode"
 
 	"github.com/gorilla/mux"
 	"github.com/mattermost/mattermost/server/public/plugin"
@@ -70,12 +72,27 @@ func (p *Plugin) writeJSON(w http.ResponseWriter, value any) {
 }
 
 func (p *Plugin) writeError(w http.ResponseWriter, status int, message string) {
+	message = sentence(message)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	// "message" is included so the webapp's ClientError surfaces the text.
 	if err := json.NewEncoder(w).Encode(map[string]string{"error": message, "message": message}); err != nil {
 		p.API.LogError("Failed to write error response", "error", err.Error())
 	}
+}
+
+// sentence turns a Go-style error string ("you can't report yourself") into
+// the sentence shown to the user ("You can't report yourself.").
+func sentence(message string) string {
+	if message == "" {
+		return message
+	}
+	runes := []rune(message)
+	runes[0] = unicode.ToUpper(runes[0])
+	if !strings.ContainsRune(".!?", runes[len(runes)-1]) {
+		runes = append(runes, '.')
+	}
+	return string(runes)
 }
 
 // requireChannelMember checks that the user is a member of the channel and
@@ -100,6 +117,11 @@ type statusResponse struct {
 	IsModerator     bool `json:"is_moderator"`
 	IsAdmin         bool `json:"is_admin"`
 	OpenReportCount int  `json:"open_report_count"`
+
+	// Muted and TimeoutUntil describe the caller's own restriction in the
+	// channel, so the webapp can explain why they can't post before sending.
+	Muted        bool  `json:"muted"`
+	TimeoutUntil int64 `json:"timeout_until,omitempty"`
 }
 
 func (p *Plugin) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +134,12 @@ func (p *Plugin) handleStatus(w http.ResponseWriter, r *http.Request) {
 	status := statusResponse{
 		IsModerator: p.isModerator(userID, channelID),
 		IsAdmin:     p.isAdmin(userID, channelID),
+	}
+	if restriction, err := p.kvstore.GetRestriction(channelID, userID); err == nil && restriction != nil {
+		status.Muted = restriction.Muted
+		if restriction.TimedOutNow(p.now()) {
+			status.TimeoutUntil = restriction.TimeoutUntil
+		}
 	}
 	if status.IsModerator {
 		reports, err := p.kvstore.GetReports(channelID)
@@ -255,16 +283,27 @@ func (p *Plugin) decodeMemberAction(w http.ResponseWriter, r *http.Request) (*me
 	return &req, true
 }
 
-// resolveActionedReport resolves the specific report a queue action was
-// taken from; actions initiated from a message menu or the members tab carry
-// no report ID and leave the queue untouched (except bans, which resolve all
-// of the member's open reports in banUser).
+// resolveActionedReport resolves the report a warning was sent from.
+// Actions initiated from a message menu or the members tab carry no report
+// ID and leave the queue untouched. The report must be about the member the
+// action targeted, so a report ID can't be used to close unrelated reports.
 func (p *Plugin) resolveActionedReport(req *memberActionRequest, actorID, resolution string) {
-	if req.ReportID != "" {
-		if _, err := p.updateReportStatus(req.ChannelID, req.ReportID, kvstore.ReportStatusResolved, resolution, actorID); err != nil {
-			p.API.LogError("Failed to resolve report", "report_id", req.ReportID, "error", err.Error())
-		}
+	if req.ReportID == "" {
+		return
 	}
+	p.resolveReports(req.ChannelID, resolution, actorID, func(r *kvstore.Report) bool {
+		return r.ID == req.ReportID && r.TargetUserID == req.UserID
+	})
+}
+
+// resolveRestrictedMemberReports resolves all of a member's open reports
+// when a mute or timeout is applied from the queue: the restriction covers
+// every report about them, so none should be left waiting for review.
+func (p *Plugin) resolveRestrictedMemberReports(req *memberActionRequest, actorID, resolution string) {
+	if req.ReportID == "" {
+		return
+	}
+	p.resolveOpenReportsForUser(req.ChannelID, req.UserID, resolution, actorID)
 }
 
 func (p *Plugin) handleMute(w http.ResponseWriter, r *http.Request) {
@@ -277,7 +316,7 @@ func (p *Plugin) handleMute(w http.ResponseWriter, r *http.Request) {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p.resolveActionedReport(req, userID, "Muted by moderator")
+	p.resolveRestrictedMemberReports(req, userID, "Muted by moderator")
 	p.writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -292,7 +331,7 @@ func (p *Plugin) handleTimeout(w http.ResponseWriter, r *http.Request) {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p.resolveActionedReport(req, userID, "Timed out for "+label)
+	p.resolveRestrictedMemberReports(req, userID, "Timed out for "+label)
 	p.writeJSON(w, map[string]string{"status": "ok", "label": label})
 }
 
@@ -345,11 +384,14 @@ func (p *Plugin) handleDeletePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := p.deletePostAsModerator(userID, req.PostID); err != nil {
+	channelID, err := p.deletePostAsModerator(userID, req.PostID)
+	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p.resolveActionedReport(req, userID, "Message deleted")
+	// Resolve in the message's own channel, never a channel from the
+	// request body, where the actor may not be a moderator.
+	p.resolveOpenReportsForPost(channelID, req.PostID, "Message deleted", userID)
 	p.writeJSON(w, map[string]string{"status": "ok"})
 }
 

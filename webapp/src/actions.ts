@@ -199,8 +199,12 @@ export const setModerator = (channelId: string, userId: string, targetName: stri
 export const unbanUser = (channelId: string, userId: string, targetName: string) => {
     return async (dispatch: ThunkDispatch) => {
         try {
-            await client.memberAction('unban', {channel_id: channelId, user_id: userId});
-            dispatch(showToast(`${targetName} has been unbanned`, 'shield'));
+            const result = await client.memberAction('unban', {channel_id: channelId, user_id: userId});
+            if (result.warning) {
+                dispatch(showToast(`Unbanned, but ${result.warning.charAt(0).toLowerCase()}${result.warning.slice(1)}`, 'alert-circle-outline'));
+            } else {
+                dispatch(showToast(`${targetName} has been unbanned`, 'shield'));
+            }
             dispatch(refreshModerationData(channelId));
         } catch (err) {
             dispatch(showErrorToast(err));

@@ -158,9 +158,9 @@ func TestUnbanRequiresPluginBan(t *testing.T) {
 
 	// An account deactivated outside the plugin has no ban record and must
 	// not be reactivated from a channel, even by a system admin.
-	err := p.unbanUser(teamAdminID, testChannelID, "deactivated")
+	_, err := p.unbanUser(teamAdminID, testChannelID, "deactivated")
 	assert.ErrorContains(t, err, "System Console")
-	err = p.unbanUser(sysAdminID, testChannelID, "deactivated")
+	_, err = p.unbanUser(sysAdminID, testChannelID, "deactivated")
 	assert.ErrorContains(t, err, "System Console")
 	api.AssertNotCalled(t, "UpdateUserActive", mock.Anything, mock.Anything)
 }
@@ -169,18 +169,19 @@ func TestUnbanScopedToBanTeam(t *testing.T) {
 	p, api, kv := newTestPlugin(t, map[string]bool{teamAdminID: false})
 
 	kv.bans["elsewhere"] = &kvstore.Ban{UserID: "elsewhere", TeamID: otherTeamID}
-	err := p.unbanUser(teamAdminID, testChannelID, "elsewhere")
+	_, err := p.unbanUser(teamAdminID, testChannelID, "elsewhere")
 	assert.ErrorContains(t, err, "team where the ban was issued")
 
 	kv.bans["legacy"] = &kvstore.Ban{UserID: "legacy"}
-	err = p.unbanUser(teamAdminID, testChannelID, "legacy")
+	_, err = p.unbanUser(teamAdminID, testChannelID, "legacy")
 	assert.ErrorContains(t, err, "team where the ban was issued")
 	api.AssertNotCalled(t, "UpdateUserActive", mock.Anything, mock.Anything)
 
 	kv.bans["here"] = &kvstore.Ban{UserID: "here", TeamID: testTeamID}
 	api.On("UpdateUserActive", "here", true).Return(nil).Once()
 	api.On("PublishWebSocketEvent", mock.Anything, mock.Anything, mock.Anything).Once()
-	assert.NoError(t, p.unbanUser(teamAdminID, testChannelID, "here"))
+	_, err = p.unbanUser(teamAdminID, testChannelID, "here")
+	assert.NoError(t, err)
 	assert.NotContains(t, kv.bans, "here")
 }
 

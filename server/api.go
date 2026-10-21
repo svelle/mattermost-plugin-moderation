@@ -414,11 +414,16 @@ func (p *Plugin) handleUnban(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := p.unbanUser(userID, req.ChannelID, req.UserID); err != nil {
+	warning, err := p.unbanUser(userID, req.ChannelID, req.UserID)
+	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p.writeJSON(w, map[string]string{"status": "ok"})
+	response := map[string]string{"status": "ok"}
+	if warning != "" {
+		response["warning"] = sentence(warning)
+	}
+	p.writeJSON(w, response)
 }
 
 func (p *Plugin) handleRemoveFromChannel(w http.ResponseWriter, r *http.Request) {

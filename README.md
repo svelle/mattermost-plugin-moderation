@@ -39,13 +39,13 @@ A Mattermost plugin that adds community moderation tools directly to the channel
 Admins (system admins and team admins) can do everything moderators can, plus:
 
 - **Members & roles tab** in the moderation panel: assign or remove channel moderators, lift mutes and timeouts, remove members from the channel, and ban or unban members. The list shows members with an elevated role or an active restriction; a search box finds any other channel member to elevate or manage.
-- **Ban from server**: deactivates the account so the member can't sign back in. Bans can be reversed from the member list by a system admin or an admin of the team where the ban was issued. Accounts deactivated outside the plugin can only be reactivated from the System Console.
+- **Ban from server**: deactivates the account so the member can't sign back in, and by default replaces their username and name with a placeholder. Bans can be reversed from the member list by a system admin or an admin of the team where the ban was issued. Accounts deactivated outside the plugin can only be reactivated from the System Console.
 - Moderators can **escalate** a member's open reports to admins, which notifies every system admin by DM. Reports that are already escalated can't be escalated again.
 
 | Members & roles tab | Profile popover actions |
 | --- | --- |
 | <img src="docs/screenshots/members-and-roles-tab.png" alt="Members and roles tab" width="720"> | <img src="docs/screenshots/profile-popover-moderation-actions.png" alt="Profile popover moderation actions" width="720"> |
-| Ban confirmation | Banned member's messages hidden |
+| Ban confirmation | Banned members' messages and usernames hidden |
 | <img src="docs/screenshots/ban-confirmation.png" alt="Ban confirmation" width="720"> | <img src="docs/screenshots/after-ban-messages-hidden.png" alt="Messages hidden after a ban" width="720"> |
 
 ### Settings
@@ -53,6 +53,7 @@ Admins (system admins and team admins) can do everything moderators can, plus:
 Under **System Console → Plugins → Community Moderation**:
 
 - **Hide messages from banned members** — when a member is banned, hide their recent messages in the channel where the ban was issued.
+- **Hide banned members' usernames** — replace a banned member's username and name with a placeholder (`banned-1a2b3c4d`, shown as "Banned member") everywhere they appear, so an offensive or impersonating name disappears along with the member. Unbanning restores the original username and name.
 - **Banned message display** — show a placeholder ("Message hidden — this member was banned from the server.") in place of each hidden message, or remove the messages entirely.
 - **Maximum reports per member** and **report rate limit window** — the rolling per-member cap on report submissions (default 5 per 10 minutes; set the cap to 0 to disable).
 

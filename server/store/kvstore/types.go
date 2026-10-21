@@ -63,4 +63,18 @@ type Ban struct {
 	ChannelID string `json:"channel_id,omitempty"`
 	TeamID    string `json:"team_id,omitempty"`
 	CreateAt  int64  `json:"create_at"`
+
+	// Identity, when set, holds the member's profile from before the ban
+	// replaced their username and name, so an unban can restore it.
+	Identity *BannedIdentity `json:"identity,omitempty"`
+}
+
+// BannedIdentity is a banned member's original username and name, plus the
+// placeholder username they were given.
+type BannedIdentity struct {
+	Username            string `json:"username"`
+	FirstName           string `json:"first_name,omitempty"`
+	LastName            string `json:"last_name,omitempty"`
+	Nickname            string `json:"nickname,omitempty"`
+	PlaceholderUsername string `json:"placeholder_username"`
 }

@@ -68,8 +68,13 @@ func (p *Plugin) isBanTombstone(post *model.Post) bool {
 // postingBlockedReason returns why a member can't post in a channel, or an
 // empty string when they can.
 func (p *Plugin) postingBlockedReason(channelID, userID string) string {
-	if ban, err := p.kvstore.GetBan(userID); err == nil && ban != nil {
-		return "You've been banned from this server and can't post."
+	if p.index.mayBeBanned(userID) {
+		if ban, err := p.kvstore.GetBan(userID); err == nil && ban != nil {
+			return "You've been banned from this server and can't post."
+		}
+	}
+	if !p.index.mayBeRestricted(channelID, userID) {
+		return ""
 	}
 
 	restriction, err := p.kvstore.GetRestriction(channelID, userID)
@@ -100,12 +105,16 @@ func (p *Plugin) ReactionHasBeenAdded(_ *plugin.Context, reaction *model.Reactio
 		return
 	}
 	banned := false
-	if ban, banErr := p.kvstore.GetBan(reaction.UserId); banErr == nil && ban != nil {
+	if p.index.mayBeBanned(reaction.UserId) {
 		// Same fallback as MessageWillBePosted: banned members can't react
 		// even if their account was reactivated outside the plugin.
-		banned = true
+		ban, banErr := p.kvstore.GetBan(reaction.UserId)
+		banned = banErr == nil && ban != nil
 	}
 	if !banned {
+		if !p.index.mayBeRestricted(post.ChannelId, reaction.UserId) {
+			return
+		}
 		restriction, rErr := p.kvstore.GetRestriction(post.ChannelId, reaction.UserId)
 		if rErr != nil || !restriction.Active(p.now()) {
 			return

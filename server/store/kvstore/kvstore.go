@@ -19,6 +19,9 @@ type KVStore interface {
 	GetRestrictionByKey(key string) (*Restriction, error)
 	DeleteByKey(key string) error
 
+	// ListKeys returns one page of every key the plugin has stored.
+	ListKeys(page, perPage int) ([]string, error)
+
 	GetBan(userID string) (*Ban, error)
 	SetBan(userID string, ban *Ban) error
 	DeleteBan(userID string) error

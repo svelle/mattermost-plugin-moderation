@@ -147,7 +147,7 @@ func TestModerationRequiresTargetInChannel(t *testing.T) {
 func TestBanRequiresTargetInChannel(t *testing.T) {
 	p, api, kv := newTestPlugin(t, map[string]bool{teamAdminID: false})
 
-	err := p.banUser(teamAdminID, testChannelID, "other-team-user")
+	_, err := p.banUser(teamAdminID, testChannelID, "other-team-user", false)
 	assert.EqualError(t, err, "that person isn't a member of this channel")
 	assert.Empty(t, kv.bans)
 	api.AssertNotCalled(t, "UpdateUserActive", mock.Anything, mock.Anything)

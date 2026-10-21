@@ -155,22 +155,27 @@ func (p *Plugin) deletePostAsModerator(actorID, postID string) (string, error) {
 // banUser deactivates the member server-wide, resolves their open reports in
 // the channel, and — depending on plugin settings — hides their recent
 // messages in the channel where the ban was issued.
-func (p *Plugin) banUser(actorID, channelID, targetID string) error {
+//
+// removePicture also replaces the member's profile picture with a neutral
+// placeholder, for pictures that are offensive in themselves. The original
+// picture isn't kept, so it doesn't come back if the ban is lifted. The
+// returned warning is set when the picture couldn't be replaced.
+func (p *Plugin) banUser(actorID, channelID, targetID string, removePicture bool) (string, error) {
 	if !p.isAdmin(actorID, channelID) {
-		return errors.New("only admins can ban members")
+		return "", errors.New("only admins can ban members")
 	}
 	if err := p.checkCanModerateMember(actorID, targetID, channelID); err != nil {
-		return err
+		return "", err
 	}
 	target, err := p.client.User.Get(targetID)
 	if err != nil {
-		return errors.Wrap(err, "member not found")
+		return "", errors.Wrap(err, "member not found")
 	}
 	if target.IsBot {
-		return errors.New("bots can't be banned with this plugin")
+		return "", errors.New("bots can't be banned with this plugin")
 	}
 	if err := p.client.User.UpdateActive(targetID, false); err != nil {
-		return errors.Wrap(err, "failed to deactivate member")
+		return "", errors.Wrap(err, "failed to deactivate member")
 	}
 	teamID := ""
 	if channel, chErr := p.client.Channel.Get(channelID); chErr == nil {
@@ -200,7 +205,20 @@ func (p *Plugin) banUser(actorID, channelID, targetID string) error {
 		if rbErr := p.client.User.UpdateActive(targetID, true); rbErr != nil {
 			p.API.LogError("Failed to roll back deactivation after ban record failure", "user_id", targetID, "error", rbErr.Error())
 		}
-		return errors.Wrap(err, "failed to record ban")
+		return "", errors.Wrap(err, "failed to record ban")
+	}
+
+	warning := ""
+	if removePicture {
+		if err := p.removeProfilePicture(targetID); err != nil {
+			p.API.LogError("Failed to remove banned member's profile picture", "user_id", targetID, "error", err.Error())
+			warning = "their profile picture couldn't be removed — remove it from the System Console"
+		} else {
+			ban.PictureRemoved = true
+			if err := p.kvstore.SetBan(targetID, ban); err != nil {
+				p.API.LogError("Failed to record profile picture removal", "user_id", targetID, "error", err.Error())
+			}
+		}
 	}
 
 	if ban.Identity != nil {
@@ -213,7 +231,7 @@ func (p *Plugin) banUser(actorID, channelID, targetID string) error {
 	if config.HideBannedMessages {
 		go p.hideMessagesFromUser(channelID, targetID, config.BannedMessageMode)
 	}
-	return nil
+	return warning, nil
 }
 
 // unbanUser reverses a ban issued through the plugin. Accounts deactivated

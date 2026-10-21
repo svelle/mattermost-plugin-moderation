@@ -272,6 +272,9 @@ type memberActionRequest struct {
 	ReportID  string `json:"report_id"`
 	Duration  string `json:"duration"`
 	Moderator bool   `json:"moderator"`
+
+	// RemovePicture asks a ban to also replace the member's profile picture.
+	RemovePicture bool `json:"remove_picture"`
 }
 
 func (p *Plugin) decodeMemberAction(w http.ResponseWriter, r *http.Request) (*memberActionRequest, bool) {
@@ -401,11 +404,16 @@ func (p *Plugin) handleBan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := p.banUser(userID, req.ChannelID, req.UserID); err != nil {
+	warning, err := p.banUser(userID, req.ChannelID, req.UserID, req.RemovePicture)
+	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p.writeJSON(w, map[string]string{"status": "ok"})
+	response := map[string]string{"status": "ok"}
+	if warning != "" {
+		response["warning"] = sentence(warning)
+	}
+	p.writeJSON(w, response)
 }
 
 func (p *Plugin) handleUnban(w http.ResponseWriter, r *http.Request) {

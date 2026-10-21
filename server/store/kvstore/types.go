@@ -67,6 +67,10 @@ type Ban struct {
 	// Identity, when set, holds the member's profile from before the ban
 	// replaced their username and name, so an unban can restore it.
 	Identity *BannedIdentity `json:"identity,omitempty"`
+
+	// PictureRemoved records that the ban replaced the member's profile
+	// picture with a placeholder.
+	PictureRemoved bool `json:"picture_removed,omitempty"`
 }
 
 // BannedIdentity is a banned member's original username and name, plus the

@@ -28,7 +28,9 @@ func TestBanHidesIdentityAndUnbanRestoresIt(t *testing.T) {
 	api.On("KVDelete", mock.Anything).Return(nil).Maybe()
 	api.On("PublishWebSocketEvent", mock.Anything, mock.Anything, mock.Anything).Maybe()
 
-	assert.NoError(t, p.banUser(sysAdminID, testChannelID, bannedUserID))
+	_, err := p.banUser(sysAdminID, testChannelID, bannedUserID, false)
+	assert.NoError(t, err)
+	api.AssertNotCalled(t, "SetProfileImage", mock.Anything, mock.Anything)
 	assert.Equal(t, "banned-abcdefgh", current.Username)
 	assert.Equal(t, bannedNickname, current.Nickname)
 	assert.Empty(t, current.FirstName)
@@ -63,4 +65,41 @@ func TestRestoreIdentityWarnsWhenUsernameTaken(t *testing.T) {
 
 	warning := p.restoreBannedIdentity(bannedUserID, &kvstore.BannedIdentity{Username: "taken", PlaceholderUsername: "banned-abcdefgh"})
 	assert.Contains(t, warning, "@taken")
+}
+
+func TestBanCanRemoveProfilePicture(t *testing.T) {
+	p, api, kv := newTestPlugin(t, map[string]bool{bannedUserID: false})
+	p.configuration = &configuration{}
+
+	api.On("GetUser", bannedUserID).Return(&model.User{Id: bannedUserID, Username: "someone"}, nil)
+	api.On("UpdateUserActive", bannedUserID, false).Return(nil)
+	api.On("KVSetWithOptions", mock.Anything, mock.Anything, mock.Anything).Return(true, nil).Maybe()
+	api.On("KVDelete", mock.Anything).Return(nil).Maybe()
+	api.On("PublishWebSocketEvent", mock.Anything, mock.Anything, mock.Anything).Maybe()
+
+	placeholder, err := bannedPlaceholderPicture()
+	assert.NoError(t, err)
+	api.On("SetProfileImage", bannedUserID, placeholder).Return(nil).Once()
+
+	warning, err := p.banUser(sysAdminID, testChannelID, bannedUserID, true)
+	assert.NoError(t, err)
+	assert.Empty(t, warning)
+	assert.True(t, kv.bans[bannedUserID].PictureRemoved)
+}
+
+func TestBanWarnsWhenPictureRemovalFails(t *testing.T) {
+	p, api, kv := newTestPlugin(t, map[string]bool{bannedUserID: false})
+	p.configuration = &configuration{}
+
+	api.On("GetUser", bannedUserID).Return(&model.User{Id: bannedUserID, Username: "someone"}, nil)
+	api.On("UpdateUserActive", bannedUserID, false).Return(nil)
+	api.On("KVSetWithOptions", mock.Anything, mock.Anything, mock.Anything).Return(true, nil).Maybe()
+	api.On("KVDelete", mock.Anything).Return(nil).Maybe()
+	api.On("PublishWebSocketEvent", mock.Anything, mock.Anything, mock.Anything).Maybe()
+	api.On("SetProfileImage", bannedUserID, mock.Anything).Return(model.NewAppError("SetProfileImage", "boom", nil, "", 500))
+
+	warning, err := p.banUser(sysAdminID, testChannelID, bannedUserID, true)
+	assert.NoError(t, err, "the ban itself still succeeds")
+	assert.Contains(t, warning, "profile picture")
+	assert.False(t, kv.bans[bannedUserID].PictureRemoved)
 }

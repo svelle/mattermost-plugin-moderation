@@ -62,12 +62,21 @@ export type ConfirmAction =
     | {kind: 'ban'; channelId: string; targetUserId: string; targetName: string; reportId?: string}
     | {kind: 'remove'; channelId: string; targetUserId: string; targetName: string};
 
+// ConfirmOption is an extra checkbox in the confirm modal, unchecked by
+// default; previewUserId shows that member's profile picture beside it.
+export type ConfirmOption = {
+    label: string;
+    description: string;
+    previewUserId?: string;
+};
+
 export type ConfirmModalState = {
     icon: string;
     title: string;
     body: string;
     confirmLabel: string;
     action: ConfirmAction;
+    option?: ConfirmOption;
 };
 
 export type ToastState = {

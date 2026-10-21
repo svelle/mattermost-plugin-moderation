@@ -40,6 +40,7 @@ Admins (system admins and team admins) can do everything moderators can, plus:
 
 - **Members & roles tab** in the moderation panel: assign or remove channel moderators, lift mutes and timeouts, remove members from the channel, and ban or unban members. The list shows members with an elevated role or an active restriction; a search box finds any other channel member to elevate or manage.
 - **Ban from server**: deactivates the account so the member can't sign back in, and by default replaces their username and name with a placeholder. If their profile picture is offensive too, tick **Also remove their profile picture** in the ban dialog to replace it with a neutral placeholder; otherwise the picture is kept. A removed picture isn't restored if the ban is lifted. Bans can be reversed from the member list by a system admin or an admin of the team where the ban was issued. Accounts deactivated outside the plugin can only be reactivated from the System Console.
+- **Mass direct message protection**: a member who starts direct or group messages with too many people too quickly (by default 20 people in 5 minutes, or 100 in a day) can't start new conversations for an hour, and every system admin gets one alert from the bot. Replies in conversations the member already posted in never count, and they keep working during the block. System admins and bots are exempt. Optionally, the account is also suspended automatically (banned by the moderation bot); only a system admin can lift that.
 - Moderators can **escalate** a member's open reports to admins, which notifies every system admin by DM. Reports that are already escalated can't be escalated again.
 
 | Members & roles tab | Profile popover actions |
@@ -52,9 +53,11 @@ Admins (system admins and team admins) can do everything moderators can, plus:
 
 Under **System Console → Plugins → Community Moderation**:
 
-- **Hide messages from banned members** — when a member is banned, hide their recent messages in the channel where the ban was issued.
+- **Hide messages from banned members** — when a member is banned, hide their last 500 messages in the channel where the ban was issued, and their messages from the last 72 hours (**Hide messages from the last (hours)**) in every other channel, direct message and group message they're in. The admin who issued the ban gets a DM with the count when it's done. A ban also resolves the member's open reports in every channel and conversation.
 - **Hide banned members' usernames** — replace a banned member's username and name with a placeholder (`banned-1a2b3c4d`, shown as "Banned member") everywhere they appear, so an offensive or impersonating name disappears along with the member. Unbanning restores the original username and name.
 - **Banned message display** — show a placeholder ("Message hidden — this member was banned from the server.") in place of each hidden message, or remove the messages entirely.
+- **Mass direct message limit**, **window**, and **daily direct message limit** — how many people a member can start direct or group messages with before new conversations are blocked (default 20 per 5 minutes and 100 per 24 hours; set either to 0 to turn it off). A group message counts once for each person in it.
+- **Block new direct messages for (minutes)** and **When a member hits a direct message limit** — how long the block lasts (default 60 minutes), and whether to only block and alert system admins or also suspend the account.
 - **Maximum reports per member** and **report rate limit window** — the rolling per-member cap on report submissions (default 5 per 10 minutes; set the cap to 0 to disable).
 
 <img src="docs/screenshots/system-console-settings.png" alt="Plugin settings in the System Console" width="720">
@@ -151,7 +154,7 @@ make deploy
 
 ### How it works
 
-- **Server (Go)** stores reports, restrictions (mutes/timeouts), bans, and per-channel moderator lists in the plugin KV store. Restrictions are enforced in the `MessageWillBePosted` hook (and by removing reactions from restricted members). Bans deactivate the account. Websocket events keep every open moderation panel in sync.
+- **Server (Go)** stores reports, restrictions (mutes/timeouts), bans, and per-channel moderator lists in the plugin KV store. Restrictions and the mass direct message limit are enforced in the `MessageWillBePosted` hook (and by removing reactions from restricted members). Bans deactivate the account. Websocket events keep every open moderation panel in sync.
 - **Web app (React)** registers a channel header button, a right-hand sidebar (report queue + members & roles), post dropdown menu actions, profile popover actions, and the report/timeout/confirm modals.
 
 ## License

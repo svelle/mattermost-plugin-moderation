@@ -8,13 +8,18 @@ import (
 )
 
 // MessageWillBePosted blocks posts from members who are muted or timed out in
-// the channel, and from banned members in case their account was reactivated
-// outside the plugin.
+// the channel, from banned members in case their account was reactivated
+// outside the plugin, and new direct messages from members who started too
+// many conversations too quickly.
 func (p *Plugin) MessageWillBePosted(_ *plugin.Context, post *model.Post) (*model.Post, string) {
 	if post == nil || post.UserId == "" || post.UserId == p.botUserID || post.IsSystemMessage() {
 		return post, ""
 	}
-	if reason := p.postingBlockedReason(post.ChannelId, post.UserId); reason != "" {
+	reason := p.postingBlockedReason(post.ChannelId, post.UserId)
+	if reason == "" {
+		reason = p.massDMBlockedReason(post)
+	}
+	if reason != "" {
 		// The webapp only shows a failed post with "Retry" for a rejected
 		// message, so tell the member why in the channel as well.
 		p.client.Post.SendEphemeralPost(post.UserId, &model.Post{

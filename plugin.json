@@ -27,7 +27,7 @@
                 "display_name": "Hide messages from banned members",
                 "type": "bool",
                 "default": true,
-                "help_text": "When a member is banned, hide their recent messages in the channel where the ban was issued."
+                "help_text": "When a member is banned, hide their recent messages: the last 500 messages in the channel where the ban was issued, plus their messages from the lookback period below in every other channel, direct message and group message they're in. Their open reports are resolved everywhere either way."
             },
             {
                 "key": "BannedMessageMode",
@@ -45,6 +45,13 @@
                     }
                 ],
                 "help_text": "Show a placeholder in place of each hidden message, or remove the messages entirely."
+            },
+            {
+                "key": "BannedMessageLookbackHours",
+                "display_name": "Hide messages from the last (hours)",
+                "type": "number",
+                "default": 72,
+                "help_text": "How far back to hide a banned member's messages outside the channel where the ban was issued. Between 1 and 720 hours."
             },
             {
                 "key": "HideBannedIdentity",
@@ -66,6 +73,51 @@
                 "type": "number",
                 "default": 10,
                 "help_text": "The rolling time window used for the report rate limit."
+            },
+            {
+                "key": "MassDMThreshold",
+                "display_name": "Mass direct message limit",
+                "type": "number",
+                "default": 20,
+                "help_text": "How many people a member can start direct or group messages with in the time window below. Replies in conversations they've already posted in don't count, and system admins and bots are exempt. Past the limit, new conversations are blocked and system admins are alerted. Set to 0 to turn this limit off (maximum 500)."
+            },
+            {
+                "key": "MassDMWindowMinutes",
+                "display_name": "Mass direct message window (minutes)",
+                "type": "number",
+                "default": 5,
+                "help_text": "The rolling time window for the mass direct message limit."
+            },
+            {
+                "key": "MassDMDailyThreshold",
+                "display_name": "Daily direct message limit",
+                "type": "number",
+                "default": 100,
+                "help_text": "How many people a member can start direct or group messages with in 24 hours, so a blocked member can't wait out the block and start again. Set to 0 to turn this limit off (maximum 1000)."
+            },
+            {
+                "key": "MassDMBlockMinutes",
+                "display_name": "Block new direct messages for (minutes)",
+                "type": "number",
+                "default": 60,
+                "help_text": "How long a member who hits a limit can't start new direct or group messages. They can still reply in conversations they've already started."
+            },
+            {
+                "key": "MassDMAction",
+                "display_name": "When a member hits a direct message limit",
+                "type": "radio",
+                "default": "block",
+                "options": [
+                    {
+                        "display_name": "Block new conversations and alert system admins",
+                        "value": "block"
+                    },
+                    {
+                        "display_name": "Also suspend the account (ban it automatically)",
+                        "value": "suspend"
+                    }
+                ],
+                "help_text": "Suspending deactivates and bans the account the same way an admin's ban does, including hiding its messages and username if those settings are on. Only a system admin can lift an automatic suspension."
             }
         ]
     }

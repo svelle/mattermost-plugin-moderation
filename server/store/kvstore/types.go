@@ -82,3 +82,18 @@ type BannedIdentity struct {
 	Nickname            string `json:"nickname,omitempty"`
 	PlaceholderUsername string `json:"placeholder_username"`
 }
+
+// DMContact is a direct or group message conversation a member started: the
+// first time they posted in it, and how many people it reached.
+type DMContact struct {
+	ChannelID string `json:"channel_id"`
+	FirstAt   int64  `json:"first_at"`
+	People    int    `json:"people"`
+}
+
+// DMBlock pauses a member's new direct messages until Until (milliseconds
+// since epoch) after they started too many conversations too quickly.
+type DMBlock struct {
+	Until    int64 `json:"until"`
+	CreateAt int64 `json:"create_at"`
+}

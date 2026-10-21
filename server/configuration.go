@@ -12,6 +12,27 @@ const (
 	BannedMessageModeRemove      = "remove"
 )
 
+// Actions taken when a member starts too many direct conversations.
+const (
+	MassDMActionBlock   = "block"
+	MassDMActionSuspend = "suspend"
+)
+
+// Defaults and upper bounds for the mass-DM and cleanup settings.
+const (
+	defaultMassDMThreshold            = 20
+	defaultMassDMWindowMinutes        = 5
+	defaultMassDMDailyThreshold       = 100
+	defaultMassDMBlockMinutes         = 60
+	defaultBannedMessageLookbackHours = 72
+
+	maxMassDMThreshold            = 500
+	maxMassDMDailyThreshold       = 1000
+	maxMassDMWindowMinutes        = 24 * 60
+	maxMassDMBlockMinutes         = 7 * 24 * 60
+	maxBannedMessageLookbackHours = 30 * 24
+)
+
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
 // configuration, as well as values computed from the configuration. Any public fields will be
 // deserialized from the Mattermost server configuration in OnConfigurationChange.
@@ -25,8 +46,13 @@ const (
 // copy appropriate for your types.
 type configuration struct {
 	// HideBannedMessages hides a banned member's recent messages in the
-	// channel where the ban was issued.
+	// channel where the ban was issued, and their messages from the last
+	// BannedMessageLookbackHours in every other channel and conversation.
 	HideBannedMessages bool
+
+	// BannedMessageLookbackHours bounds how far back HideBannedMessages
+	// reaches outside the channel where the ban was issued.
+	BannedMessageLookbackHours int
 
 	// HideBannedIdentity replaces a banned member's username and name with a
 	// placeholder everywhere, restoring them if the ban is lifted.
@@ -43,6 +69,25 @@ type configuration struct {
 
 	// ReportRateWindowMinutes is the rolling window for ReportRateLimit.
 	ReportRateWindowMinutes int
+
+	// MassDMThreshold is how many people a member can start direct or
+	// group conversations with within MassDMWindowMinutes before new ones
+	// are blocked. Zero disables this limit.
+	MassDMThreshold int
+
+	// MassDMWindowMinutes is the rolling window for MassDMThreshold.
+	MassDMWindowMinutes int
+
+	// MassDMDailyThreshold is the same limit over 24 hours, so a member
+	// can't wait out a block and start again. Zero disables this limit.
+	MassDMDailyThreshold int
+
+	// MassDMBlockMinutes is how long new conversations stay blocked.
+	MassDMBlockMinutes int
+
+	// MassDMAction is what happens besides the block: MassDMActionBlock
+	// alerts system admins, MassDMActionSuspend also bans the account.
+	MassDMAction string
 }
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
@@ -61,11 +106,17 @@ func (p *Plugin) getConfiguration() *configuration {
 
 	if p.configuration == nil {
 		return &configuration{
-			HideBannedMessages:      true,
-			HideBannedIdentity:      true,
-			BannedMessageMode:       BannedMessageModePlaceholder,
-			ReportRateLimit:         5,
-			ReportRateWindowMinutes: 10,
+			HideBannedMessages:         true,
+			HideBannedIdentity:         true,
+			BannedMessageMode:          BannedMessageModePlaceholder,
+			ReportRateLimit:            5,
+			ReportRateWindowMinutes:    10,
+			BannedMessageLookbackHours: defaultBannedMessageLookbackHours,
+			MassDMThreshold:            defaultMassDMThreshold,
+			MassDMWindowMinutes:        defaultMassDMWindowMinutes,
+			MassDMDailyThreshold:       defaultMassDMDailyThreshold,
+			MassDMBlockMinutes:         defaultMassDMBlockMinutes,
+			MassDMAction:               MassDMActionBlock,
 		}
 	}
 
@@ -117,8 +168,30 @@ func (p *Plugin) OnConfigurationChange() error {
 	if configuration.ReportRateWindowMinutes <= 0 {
 		configuration.ReportRateWindowMinutes = 10
 	}
+	configuration.normalizeMassDM()
 
 	p.setConfiguration(configuration)
 
 	return nil
+}
+
+// clampSetting replaces a value below minimum with def and caps it at maximum.
+func clampSetting(value, minimum, maximum, def int) int {
+	if value < minimum {
+		return def
+	}
+	return min(value, maximum)
+}
+
+// normalizeMassDM fills in defaults for invalid mass-DM and cleanup settings.
+// An explicit zero threshold is kept, since it turns that limit off.
+func (c *configuration) normalizeMassDM() {
+	c.MassDMThreshold = clampSetting(c.MassDMThreshold, 0, maxMassDMThreshold, defaultMassDMThreshold)
+	c.MassDMDailyThreshold = clampSetting(c.MassDMDailyThreshold, 0, maxMassDMDailyThreshold, defaultMassDMDailyThreshold)
+	c.MassDMWindowMinutes = clampSetting(c.MassDMWindowMinutes, 1, maxMassDMWindowMinutes, defaultMassDMWindowMinutes)
+	c.MassDMBlockMinutes = clampSetting(c.MassDMBlockMinutes, 1, maxMassDMBlockMinutes, defaultMassDMBlockMinutes)
+	c.BannedMessageLookbackHours = clampSetting(c.BannedMessageLookbackHours, 1, maxBannedMessageLookbackHours, defaultBannedMessageLookbackHours)
+	if c.MassDMAction != MassDMActionSuspend {
+		c.MassDMAction = MassDMActionBlock
+	}
 }

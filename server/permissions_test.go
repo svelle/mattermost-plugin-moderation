@@ -3,7 +3,9 @@ package main
 import (
 	"net/http"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
@@ -20,6 +22,11 @@ type fakeKVStore struct {
 	restrictions map[string]*kvstore.Restriction
 	bans         map[string]*kvstore.Ban
 	moderators   map[string][]string
+
+	// dmMu guards the direct message state, which tests use concurrently.
+	dmMu       sync.Mutex
+	dmContacts map[string][]kvstore.DMContact
+	dmBlocks   map[string]*kvstore.DMBlock
 }
 
 func newFakeKVStore() *fakeKVStore {
@@ -28,6 +35,8 @@ func newFakeKVStore() *fakeKVStore {
 		restrictions: map[string]*kvstore.Restriction{},
 		bans:         map[string]*kvstore.Ban{},
 		moderators:   map[string][]string{},
+		dmContacts:   map[string][]kvstore.DMContact{},
+		dmBlocks:     map[string]*kvstore.DMBlock{},
 	}
 }
 
@@ -67,6 +76,9 @@ func (f *fakeKVStore) ListKeys(page, perPage int) ([]string, error) {
 	for userID := range f.bans {
 		keys = append(keys, "ban_"+userID)
 	}
+	for channelID := range f.reports {
+		keys = append(keys, "reports_"+channelID)
+	}
 	slices.Sort(keys)
 	start := min(page*perPage, len(keys))
 	return keys[start:min(start+perPage, len(keys))], nil
@@ -85,6 +97,36 @@ func (f *fakeKVStore) SetBan(userID string, ban *kvstore.Ban) error {
 func (f *fakeKVStore) DeleteBan(userID string) error {
 	delete(f.bans, userID)
 	return nil
+}
+
+func (f *fakeKVStore) GetDMContacts(userID string) ([]kvstore.DMContact, error) {
+	f.dmMu.Lock()
+	defer f.dmMu.Unlock()
+	return slices.Clone(f.dmContacts[userID]), nil
+}
+
+func (f *fakeKVStore) SaveDMContacts(userID string, contacts []kvstore.DMContact, _ time.Duration) error {
+	f.dmMu.Lock()
+	defer f.dmMu.Unlock()
+	f.dmContacts[userID] = slices.Clone(contacts)
+	return nil
+}
+
+func (f *fakeKVStore) GetDMBlock(userID string) (*kvstore.DMBlock, error) {
+	f.dmMu.Lock()
+	defer f.dmMu.Unlock()
+	return f.dmBlocks[userID], nil
+}
+
+func (f *fakeKVStore) TrySetDMBlock(userID string, block *kvstore.DMBlock, _ time.Duration) (bool, error) {
+	f.dmMu.Lock()
+	defer f.dmMu.Unlock()
+	// Expired blocks are replaced, as the KV store's expiry would.
+	if existing := f.dmBlocks[userID]; existing != nil && existing.Until > model.GetMillis() {
+		return false, nil
+	}
+	f.dmBlocks[userID] = block
+	return true, nil
 }
 
 func (f *fakeKVStore) GetModerators(channelID string) ([]string, error) {

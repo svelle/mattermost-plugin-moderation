@@ -2,6 +2,7 @@ package kvstore
 
 import (
 	"strings"
+	"time"
 
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/pkg/errors"
@@ -13,6 +14,8 @@ const (
 	restrictionKeyPrefix  = "restrict_"
 	banKeyPrefix          = "ban_"
 	moderatorsKeyPrefix   = "mods_"
+	dmContactsKeyPrefix   = "dmrate_"
+	dmBlockKeyPrefix      = "dmblock_"
 )
 
 type Client struct {
@@ -72,6 +75,12 @@ func ParseRestrictionKey(key string) (channelID, userID string, ok bool) {
 	}
 	channelID, userID, ok = strings.Cut(rest, "_")
 	return channelID, userID, ok && channelID != "" && userID != ""
+}
+
+// ParseReportsKey returns the channel a report list key is for.
+func ParseReportsKey(key string) (channelID string, ok bool) {
+	channelID, ok = strings.CutPrefix(key, reportsKeyPrefix)
+	return channelID, ok && channelID != ""
 }
 
 // ParseBanKey returns the user a ban key is for.
@@ -164,4 +173,37 @@ func (kv Client) SaveModerators(channelID string, userIDs []string) error {
 		return errors.Wrap(err, "failed to save moderators")
 	}
 	return nil
+}
+
+func (kv Client) GetDMContacts(userID string) ([]DMContact, error) {
+	var contacts []DMContact
+	if err := kv.client.KV.Get(dmContactsKeyPrefix+userID, &contacts); err != nil {
+		return nil, errors.Wrap(err, "failed to get direct message contacts")
+	}
+	return contacts, nil
+}
+
+func (kv Client) SaveDMContacts(userID string, contacts []DMContact, ttl time.Duration) error {
+	if _, err := kv.client.KV.Set(dmContactsKeyPrefix+userID, contacts, pluginapi.SetExpiry(ttl)); err != nil {
+		return errors.Wrap(err, "failed to save direct message contacts")
+	}
+	return nil
+}
+
+func (kv Client) GetDMBlock(userID string) (*DMBlock, error) {
+	var block *DMBlock
+	if err := kv.client.KV.Get(dmBlockKeyPrefix+userID, &block); err != nil {
+		return nil, errors.Wrap(err, "failed to get direct message block")
+	}
+	return block, nil
+}
+
+func (kv Client) TrySetDMBlock(userID string, block *DMBlock, ttl time.Duration) (bool, error) {
+	// An atomic set with no old value only inserts, replacing an expired
+	// value but never a live one, so one caller wins across the cluster.
+	created, err := kv.client.KV.Set(dmBlockKeyPrefix+userID, block, pluginapi.SetAtomic(nil), pluginapi.SetExpiry(ttl))
+	if err != nil {
+		return false, errors.Wrap(err, "failed to set direct message block")
+	}
+	return created, nil
 }

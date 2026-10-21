@@ -1,5 +1,7 @@
 package kvstore
 
+import "time"
+
 // KVStore is the data-access layer for all moderation state kept in the
 // plugin KV store. Reports are stored as one list per channel, restrictions
 // (mutes and timeouts) per channel and user, bans per user, and the
@@ -25,6 +27,15 @@ type KVStore interface {
 	GetBan(userID string) (*Ban, error)
 	SetBan(userID string, ban *Ban) error
 	DeleteBan(userID string) error
+
+	// Conversations a member started recently, kept for ttl after the last
+	// change, and the block that pauses their new direct messages.
+	GetDMContacts(userID string) ([]DMContact, error)
+	SaveDMContacts(userID string, contacts []DMContact, ttl time.Duration) error
+	GetDMBlock(userID string) (*DMBlock, error)
+	// TrySetDMBlock stores the block only if none exists, and reports
+	// whether this call created it.
+	TrySetDMBlock(userID string, block *DMBlock, ttl time.Duration) (bool, error)
 
 	GetModerators(channelID string) ([]string, error)
 	SaveModerators(channelID string, userIDs []string) error

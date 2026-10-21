@@ -51,6 +51,9 @@ type Plugin struct {
 
 	// stopIndex stops the goroutine that keeps index up to date.
 	stopIndex chan struct{}
+
+	// dmGuard caches lookups for mass-DM detection.
+	dmGuard dmGuard
 }
 
 // OnActivate is invoked when the plugin is activated. If an error is returned, the plugin will be deactivated.

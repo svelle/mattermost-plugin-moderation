@@ -28,14 +28,15 @@ type KVStore interface {
 	SetBan(userID string, ban *Ban) error
 	DeleteBan(userID string) error
 
-	// Conversations a member started recently, kept for ttl after the last
-	// change, and the block that pauses their new direct messages.
-	GetDMContacts(userID string) ([]DMContact, error)
-	SaveDMContacts(userID string, contacts []DMContact, ttl time.Duration) error
-	GetDMBlock(userID string) (*DMBlock, error)
-	// TrySetDMBlock stores the block only if none exists, and reports
+	// Conversations or channels a member started posting in recently, per
+	// spam limit scope, kept for ttl after the last change, and the block
+	// that stops them posting in new ones.
+	GetSpamContacts(scope, userID string) ([]SpamContact, error)
+	SaveSpamContacts(scope, userID string, contacts []SpamContact, ttl time.Duration) error
+	GetSpamBlock(scope, userID string) (*SpamBlock, error)
+	// TrySetSpamBlock stores the block only if none exists, and reports
 	// whether this call created it.
-	TrySetDMBlock(userID string, block *DMBlock, ttl time.Duration) (bool, error)
+	TrySetSpamBlock(scope, userID string, block *SpamBlock, ttl time.Duration) (bool, error)
 
 	GetModerators(channelID string) ([]string, error)
 	SaveModerators(channelID string, userIDs []string) error

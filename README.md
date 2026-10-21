@@ -40,7 +40,9 @@ Admins (system admins and team admins) can do everything moderators can, plus:
 
 - **Members & roles tab** in the moderation panel: assign or remove channel moderators, lift mutes and timeouts, remove members from the channel, and ban or unban members. The list shows members with an elevated role or an active restriction; a search box finds any other channel member to elevate or manage.
 - **Ban from server**: deactivates the account so the member can't sign back in, and by default replaces their username and name with a placeholder. If their profile picture is offensive too, tick **Also remove their profile picture** in the ban dialog to replace it with a neutral placeholder; otherwise the picture is kept. A removed picture isn't restored if the ban is lifted. Bans can be reversed from the member list by a system admin or an admin of the team where the ban was issued. Accounts deactivated outside the plugin can only be reactivated from the System Console.
-- **Mass direct message protection**: a member who starts direct or group messages with too many people too quickly (by default 20 people in 5 minutes, or 100 in a day) can't start new conversations for an hour, and every system admin gets one alert from the bot. Replies in conversations the member already posted in never count, and they keep working during the block. System admins and bots are exempt. Optionally, the account is also suspended automatically (banned by the moderation bot); only a system admin can lift that.
+- **Mass direct message protection**: a member who starts direct or group messages with too many people too quickly (by default 20 people in 5 minutes, or 100 in a day) can't start new conversations for an hour, and every system admin gets one alert from the bot. Replies in conversations the member already posted in never count, and they keep working during the block. Optionally, the account is also suspended automatically (banned by the moderation bot); only a system admin can lift that.
+- **Channel spam protection**: a member who posts in too many different public or private channels too quickly (by default 10 in 5 minutes) can't post in other channels for an hour, with the same alert and optional suspension. A member who floods one channel (by default more than 15 messages in 30 seconds) is timed out there for 10 minutes automatically, and the channel's assigned moderators get a DM. The channel's moderators are exempt from both.
+- System admins are exempt from all spam limits, and so are bots and incoming webhooks unless **Exempt bots and webhooks from spam limits** is turned off.
 - Moderators can **escalate** a member's open reports to admins, which notifies every system admin by DM. Reports that are already escalated can't be escalated again.
 
 | Members & roles tab | Profile popover actions |
@@ -57,7 +59,11 @@ Under **System Console → Plugins → Community Moderation**:
 - **Hide banned members' usernames** — replace a banned member's username and name with a placeholder (`banned-1a2b3c4d`, shown as "Banned member") everywhere they appear, so an offensive or impersonating name disappears along with the member. Unbanning restores the original username and name.
 - **Banned message display** — show a placeholder ("Message hidden — this member was banned from the server.") in place of each hidden message, or remove the messages entirely.
 - **Mass direct message limit**, **window**, and **daily direct message limit** — how many people a member can start direct or group messages with before new conversations are blocked (default 20 per 5 minutes and 100 per 24 hours; set either to 0 to turn it off). A group message counts once for each person in it.
-- **Block new direct messages for (minutes)** and **When a member hits a direct message limit** — how long the block lasts (default 60 minutes), and whether to only block and alert system admins or also suspend the account.
+- **Block new direct messages for (minutes)** — how long the block lasts (default 60 minutes).
+- **Cross-posting limit**, **window**, and **block** — how many different public or private channels a member can post in before posting in others is blocked (default 10 per 5 minutes, blocked for 60 minutes; set the limit to 0 to turn it off).
+- **When a member hits the direct message or cross-posting limit** — only block and alert system admins, or also suspend the account. Bots are never suspended.
+- **Flood limit**, **window**, and **timeout** — how many messages a member can post in one channel before they're timed out there (default 15 per 30 seconds, timed out for 10 minutes; set the limit to 0 to turn it off). Each server in a high-availability cluster counts separately, so a burst spread across servers can go further before it trips.
+- **Exempt bots and webhooks from spam limits** — on by default. Incoming webhooks post as the person who created them, so they'd otherwise count against that person. Turn it off to limit bots and webhooks too, for example in case a bot's access token leaks. The moderation bot is always exempt.
 - **Maximum reports per member** and **report rate limit window** — the rolling per-member cap on report submissions (default 5 per 10 minutes; set the cap to 0 to disable).
 
 <img src="docs/screenshots/system-console-settings.png" alt="Plugin settings in the System Console" width="720">
@@ -154,7 +160,7 @@ make deploy
 
 ### How it works
 
-- **Server (Go)** stores reports, restrictions (mutes/timeouts), bans, and per-channel moderator lists in the plugin KV store. Restrictions and the mass direct message limit are enforced in the `MessageWillBePosted` hook (and by removing reactions from restricted members). Bans deactivate the account. Websocket events keep every open moderation panel in sync.
+- **Server (Go)** stores reports, restrictions (mutes/timeouts), bans, and per-channel moderator lists in the plugin KV store. Restrictions and the spam limits are enforced in the `MessageWillBePosted` hook (and by removing reactions from restricted members). Bans deactivate the account. Websocket events keep every open moderation panel in sync.
 - **Web app (React)** registers a channel header button, a right-hand sidebar (report queue + members & roles), post dropdown menu actions, profile popover actions, and the report/timeout/confirm modals.
 
 ## License

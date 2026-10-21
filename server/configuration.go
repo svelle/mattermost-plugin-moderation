@@ -12,24 +12,34 @@ const (
 	BannedMessageModeRemove      = "remove"
 )
 
-// Actions taken when a member starts too many direct conversations.
+// Actions taken when a member hits the mass direct message or cross-posting
+// limit.
 const (
-	MassDMActionBlock   = "block"
-	MassDMActionSuspend = "suspend"
+	SpamActionBlock   = "block"
+	SpamActionSuspend = "suspend"
 )
 
-// Defaults and upper bounds for the mass-DM and cleanup settings.
+// Defaults and upper bounds for the spam limit and cleanup settings.
 const (
 	defaultMassDMThreshold            = 20
 	defaultMassDMWindowMinutes        = 5
 	defaultMassDMDailyThreshold       = 100
 	defaultMassDMBlockMinutes         = 60
+	defaultCrossPostThreshold         = 10
+	defaultCrossPostWindowMinutes     = 5
+	defaultCrossPostBlockMinutes      = 60
+	defaultFloodThreshold             = 15
+	defaultFloodWindowSeconds         = 30
+	defaultFloodTimeoutMinutes        = 10
 	defaultBannedMessageLookbackHours = 72
 
 	maxMassDMThreshold            = 500
 	maxMassDMDailyThreshold       = 1000
-	maxMassDMWindowMinutes        = 24 * 60
-	maxMassDMBlockMinutes         = 7 * 24 * 60
+	maxCrossPostThreshold         = 200
+	maxFloodThreshold             = 200
+	maxFloodWindowSeconds         = 600
+	maxWindowMinutes              = 24 * 60
+	maxBlockMinutes               = 7 * 24 * 60
 	maxBannedMessageLookbackHours = 30 * 24
 )
 
@@ -85,9 +95,37 @@ type configuration struct {
 	// MassDMBlockMinutes is how long new conversations stay blocked.
 	MassDMBlockMinutes int
 
-	// MassDMAction is what happens besides the block: MassDMActionBlock
-	// alerts system admins, MassDMActionSuspend also bans the account.
-	MassDMAction string
+	// CrossPostThreshold is how many different team channels a member can
+	// post in within CrossPostWindowMinutes before posting in others is
+	// blocked. Zero disables this limit.
+	CrossPostThreshold int
+
+	// CrossPostWindowMinutes is the rolling window for CrossPostThreshold.
+	CrossPostWindowMinutes int
+
+	// CrossPostBlockMinutes is how long posting in other channels stays
+	// blocked.
+	CrossPostBlockMinutes int
+
+	// SpamAction is what happens besides the block when a member hits the
+	// mass direct message or cross-posting limit: SpamActionBlock alerts
+	// system admins, SpamActionSuspend also bans the account.
+	SpamAction string
+
+	// FloodThreshold is how many messages a member can post in one team
+	// channel within FloodWindowSeconds before they're timed out there.
+	// Zero disables this limit.
+	FloodThreshold int
+
+	// FloodWindowSeconds is the rolling window for FloodThreshold.
+	FloodWindowSeconds int
+
+	// FloodTimeoutMinutes is how long the automatic timeout lasts.
+	FloodTimeoutMinutes int
+
+	// ExemptBotsFromSpamLimits leaves bot accounts out of the mass direct
+	// message, cross-posting, and flood limits.
+	ExemptBotsFromSpamLimits bool
 }
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
@@ -116,7 +154,14 @@ func (p *Plugin) getConfiguration() *configuration {
 			MassDMWindowMinutes:        defaultMassDMWindowMinutes,
 			MassDMDailyThreshold:       defaultMassDMDailyThreshold,
 			MassDMBlockMinutes:         defaultMassDMBlockMinutes,
-			MassDMAction:               MassDMActionBlock,
+			CrossPostThreshold:         defaultCrossPostThreshold,
+			CrossPostWindowMinutes:     defaultCrossPostWindowMinutes,
+			CrossPostBlockMinutes:      defaultCrossPostBlockMinutes,
+			SpamAction:                 SpamActionBlock,
+			FloodThreshold:             defaultFloodThreshold,
+			FloodWindowSeconds:         defaultFloodWindowSeconds,
+			FloodTimeoutMinutes:        defaultFloodTimeoutMinutes,
+			ExemptBotsFromSpamLimits:   true,
 		}
 	}
 
@@ -168,7 +213,7 @@ func (p *Plugin) OnConfigurationChange() error {
 	if configuration.ReportRateWindowMinutes <= 0 {
 		configuration.ReportRateWindowMinutes = 10
 	}
-	configuration.normalizeMassDM()
+	configuration.normalizeSpamLimits()
 
 	p.setConfiguration(configuration)
 
@@ -183,15 +228,22 @@ func clampSetting(value, minimum, maximum, def int) int {
 	return min(value, maximum)
 }
 
-// normalizeMassDM fills in defaults for invalid mass-DM and cleanup settings.
+// normalizeSpamLimits fills in defaults for invalid spam limit and cleanup
+// settings.
 // An explicit zero threshold is kept, since it turns that limit off.
-func (c *configuration) normalizeMassDM() {
+func (c *configuration) normalizeSpamLimits() {
 	c.MassDMThreshold = clampSetting(c.MassDMThreshold, 0, maxMassDMThreshold, defaultMassDMThreshold)
 	c.MassDMDailyThreshold = clampSetting(c.MassDMDailyThreshold, 0, maxMassDMDailyThreshold, defaultMassDMDailyThreshold)
-	c.MassDMWindowMinutes = clampSetting(c.MassDMWindowMinutes, 1, maxMassDMWindowMinutes, defaultMassDMWindowMinutes)
-	c.MassDMBlockMinutes = clampSetting(c.MassDMBlockMinutes, 1, maxMassDMBlockMinutes, defaultMassDMBlockMinutes)
+	c.MassDMWindowMinutes = clampSetting(c.MassDMWindowMinutes, 1, maxWindowMinutes, defaultMassDMWindowMinutes)
+	c.MassDMBlockMinutes = clampSetting(c.MassDMBlockMinutes, 1, maxBlockMinutes, defaultMassDMBlockMinutes)
+	c.CrossPostThreshold = clampSetting(c.CrossPostThreshold, 0, maxCrossPostThreshold, defaultCrossPostThreshold)
+	c.CrossPostWindowMinutes = clampSetting(c.CrossPostWindowMinutes, 1, maxWindowMinutes, defaultCrossPostWindowMinutes)
+	c.CrossPostBlockMinutes = clampSetting(c.CrossPostBlockMinutes, 1, maxBlockMinutes, defaultCrossPostBlockMinutes)
+	c.FloodThreshold = clampSetting(c.FloodThreshold, 0, maxFloodThreshold, defaultFloodThreshold)
+	c.FloodWindowSeconds = clampSetting(c.FloodWindowSeconds, 1, maxFloodWindowSeconds, defaultFloodWindowSeconds)
+	c.FloodTimeoutMinutes = clampSetting(c.FloodTimeoutMinutes, 1, maxBlockMinutes, defaultFloodTimeoutMinutes)
 	c.BannedMessageLookbackHours = clampSetting(c.BannedMessageLookbackHours, 1, maxBannedMessageLookbackHours, defaultBannedMessageLookbackHours)
-	if c.MassDMAction != MassDMActionSuspend {
-		c.MassDMAction = MassDMActionBlock
+	if c.SpamAction != SpamActionSuspend {
+		c.SpamAction = SpamActionBlock
 	}
 }

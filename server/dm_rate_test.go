@@ -17,11 +17,15 @@ import (
 	"github.com/svelle/mattermost-plugin-moderation/server/store/kvstore"
 )
 
-const spammerID = "spammerspammerspammerspamm"
+const (
+	spammerID    = "spammerspammerspammerspamm"
+	channelModID = "channelmod"
+)
 
-// dmTest is a plugin wired for mass-DM tests: direct message channels named
-// "dm-*" (with the spammer) and "gm-*" (five members), channels where the
-// spammer already posted, and a count of the bot's alerts to admins.
+// dmTest is a plugin wired for spam limit tests: direct message channels
+// named "dm-*" (with the spammer), group messages named "gm-*" (five
+// members), team channels with any other name, conversations where the
+// spammer already posted, and a count of the bot's DMs.
 type dmTest struct {
 	p      *Plugin
 	api    *plugintest.API
@@ -82,7 +86,17 @@ func newDMTest(t *testing.T, config *configuration) *dmTest {
 	api.On("GetUser", sysAdminID).Return(&model.User{Id: sysAdminID, Username: "admin"}, nil).Maybe()
 	api.On("SendEphemeralPost", mock.Anything, mock.Anything).Return(&model.Post{}).Maybe()
 	api.On("GetUsers", mock.Anything).Return([]*model.User{{Id: sysAdminID}}, nil).Maybe()
-	api.On("GetDirectChannel", "bot", sysAdminID).Return(&model.Channel{Id: "bot-admin-dm"}, nil).Maybe()
+	api.On("GetUser", mock.Anything).Return(func(userID string) *model.User {
+		return &model.User{Id: userID, Username: userID}
+	}, nil).Maybe()
+	// channelModID is a channel admin, and so a moderator, everywhere.
+	api.On("GetChannelMember", mock.Anything, mock.Anything).Return(func(channelID, userID string) *model.ChannelMember {
+		return &model.ChannelMember{ChannelId: channelID, UserId: userID, SchemeAdmin: userID == channelModID}
+	}, nil).Maybe()
+	api.On("PublishWebSocketEvent", mock.Anything, mock.Anything, mock.Anything).Maybe()
+	api.On("GetDirectChannel", "bot", mock.Anything).Return(func(_, userID string) *model.Channel {
+		return &model.Channel{Id: "bot-dm-" + userID}
+	}, nil).Maybe()
 	api.On("CreatePost", mock.Anything).Return(func(post *model.Post) *model.Post {
 		d.alerts.Add(1)
 		d.mu.Lock()
@@ -105,7 +119,9 @@ func dmConfig() *configuration {
 		MassDMThreshold:     3,
 		MassDMWindowMinutes: 5,
 		MassDMBlockMinutes:  60,
-		MassDMAction:        MassDMActionBlock,
+		SpamAction:          SpamActionBlock,
+
+		ExemptBotsFromSpamLimits: true,
 	}
 }
 
@@ -124,9 +140,9 @@ func TestMassDMBlocksNewConversationsPastThreshold(t *testing.T) {
 	assert.EqualValues(t, 1, d.alerts.Load(), "a second refusal doesn't alert again")
 
 	// Conversations started before the block can still continue.
-	d.p.dmGuard = dmGuard{}
+	d.p.spamGuard = spamGuard{}
 	assert.Empty(t, d.post(spammerID, "dm-0"))
-	assert.Len(t, d.kv.dmContacts[spammerID], 3)
+	assert.Len(t, d.kv.spamContacts[kvstore.SpamScopeDM+spammerID], 3)
 }
 
 func TestMassDMIgnoresReplies(t *testing.T) {
@@ -137,7 +153,7 @@ func TestMassDMIgnoresReplies(t *testing.T) {
 	for i := range 21 {
 		assert.Empty(t, d.post(spammerID, fmt.Sprintf("dm-%d", i)))
 	}
-	assert.Empty(t, d.kv.dmContacts[spammerID])
+	assert.Empty(t, d.kv.spamContacts[kvstore.SpamScopeDM+spammerID])
 	assert.Zero(t, d.alerts.Load())
 }
 
@@ -158,7 +174,7 @@ func TestMassDMParallelPostsCantSlipUnderTheLimit(t *testing.T) {
 	wg.Wait()
 
 	assert.EqualValues(t, 5, allowed.Load())
-	assert.Len(t, d.kv.dmContacts[spammerID], 5)
+	assert.Len(t, d.kv.spamContacts[kvstore.SpamScopeDM+spammerID], 5)
 	assert.EqualValues(t, 1, d.alerts.Load())
 	assert.NotEmpty(t, d.post(spammerID, "dm-new"))
 }
@@ -172,9 +188,9 @@ func TestMassDMDailyLimitOutlivesTheBlock(t *testing.T) {
 	// since expired.
 	twoHoursAgo := model.GetMillis() - (2 * time.Hour).Milliseconds()
 	for i := range 4 {
-		d.kv.dmContacts[spammerID] = append(d.kv.dmContacts[spammerID], kvstore.DMContact{ChannelID: fmt.Sprintf("old-%d", i), FirstAt: twoHoursAgo, People: 1})
+		d.kv.spamContacts[kvstore.SpamScopeDM+spammerID] = append(d.kv.spamContacts[kvstore.SpamScopeDM+spammerID], kvstore.SpamContact{ChannelID: fmt.Sprintf("old-%d", i), FirstAt: twoHoursAgo, People: 1})
 	}
-	d.kv.dmBlocks[spammerID] = &kvstore.DMBlock{Until: model.GetMillis() - 1}
+	d.kv.spamBlocks[kvstore.SpamScopeDM+spammerID] = &kvstore.SpamBlock{Until: model.GetMillis() - 1}
 
 	assert.NotEmpty(t, d.post(spammerID, "dm-new"))
 	assert.EqualValues(t, 1, d.alerts.Load())
@@ -200,7 +216,9 @@ func TestMassDMLeavesOthersAlone(t *testing.T) {
 		assert.Empty(t, d.post("helper-bot", fmt.Sprintf("dm-bot-%d", i)), "bots aren't limited")
 		assert.Empty(t, d.post(sysAdminID, fmt.Sprintf("dm-admin-%d", i)), "system admins aren't limited")
 	}
-	assert.Empty(t, d.kv.dmContacts)
+	assert.Empty(t, d.kv.spamContacts[kvstore.SpamScopeDM+spammerID])
+	assert.Empty(t, d.kv.spamBlocks)
+	assert.Zero(t, d.alerts.Load())
 
 	disabled := dmConfig()
 	disabled.MassDMThreshold = 0
@@ -217,15 +235,14 @@ func TestMassDMFailsOpen(t *testing.T) {
 
 	_, reason := p.MessageWillBePosted(nil, &model.Post{UserId: spammerID, ChannelId: "dm-broken", Message: "hi"})
 	assert.Empty(t, reason)
-	assert.Empty(t, kv.dmContacts)
+	assert.Empty(t, kv.spamContacts)
 }
 
 func TestMassDMCanSuspend(t *testing.T) {
 	config := dmConfig()
-	config.MassDMAction = MassDMActionSuspend
+	config.SpamAction = SpamActionSuspend
 	d := newDMTest(t, config)
 	d.api.On("UpdateUserActive", spammerID, false).Return(nil).Once()
-	d.api.On("PublishWebSocketEvent", mock.Anything, mock.Anything, mock.Anything).Maybe()
 
 	for i := range 4 {
 		d.post(spammerID, fmt.Sprintf("dm-%d", i))
@@ -243,32 +260,32 @@ func TestMassDMCanSuspend(t *testing.T) {
 
 func TestMassDMSuspendSkipsBannedAndReportsFailure(t *testing.T) {
 	config := dmConfig()
-	config.MassDMAction = MassDMActionSuspend
+	config.SpamAction = SpamActionSuspend
 	d := newDMTest(t, config)
 
 	user := &model.User{Id: spammerID, Username: "spammer"}
 	d.kv.bans[spammerID] = &kvstore.Ban{UserID: spammerID}
-	assert.Equal(t, "Their account was already banned.", d.p.suspendForMassDM(user, "dm-1", config))
+	assert.Equal(t, "Their account was already banned.", d.p.suspendForSpam(user, "dm-1", "start new direct or group messages", "60 minutes", config))
 	d.api.AssertNotCalled(t, "UpdateUserActive", mock.Anything, mock.Anything)
 
 	delete(d.kv.bans, spammerID)
 	d.api.On("UpdateUserActive", spammerID, false).Return(model.NewAppError("UpdateUserActive", "boom", nil, "", http.StatusInternalServerError)).Once()
-	assert.Contains(t, d.p.suspendForMassDM(user, "dm-1", config), "only the block is in place")
+	assert.Contains(t, d.p.suspendForSpam(user, "dm-1", "start new direct or group messages", "60 minutes", config), "only the block is in place")
 	assert.Empty(t, d.kv.bans)
 }
 
-func TestNormalizeMassDMSettings(t *testing.T) {
-	c := &configuration{MassDMThreshold: -1, MassDMDailyThreshold: 5000, MassDMAction: "nuke"}
-	c.normalizeMassDM()
+func TestNormalizeSpamLimitSettings(t *testing.T) {
+	c := &configuration{MassDMThreshold: -1, MassDMDailyThreshold: 5000, SpamAction: "nuke"}
+	c.normalizeSpamLimits()
 	assert.Equal(t, defaultMassDMThreshold, c.MassDMThreshold)
 	assert.Equal(t, maxMassDMDailyThreshold, c.MassDMDailyThreshold)
 	assert.Equal(t, defaultMassDMWindowMinutes, c.MassDMWindowMinutes)
 	assert.Equal(t, defaultMassDMBlockMinutes, c.MassDMBlockMinutes)
 	assert.Equal(t, defaultBannedMessageLookbackHours, c.BannedMessageLookbackHours)
-	assert.Equal(t, MassDMActionBlock, c.MassDMAction)
+	assert.Equal(t, SpamActionBlock, c.SpamAction)
 
 	off := &configuration{MassDMThreshold: 0, MassDMDailyThreshold: 0}
-	off.normalizeMassDM()
+	off.normalizeSpamLimits()
 	assert.Zero(t, off.MassDMThreshold, "an explicit zero turns the limit off")
 	assert.Zero(t, off.MassDMDailyThreshold)
 }

@@ -72,27 +72,37 @@ func (p *Plugin) timeoutUser(actorID, channelID, targetID, durationID string) (s
 	if !ok {
 		return "", errors.New("unknown timeout duration")
 	}
-	restriction, err := p.kvstore.GetRestriction(channelID, targetID)
-	if err != nil {
+	if err := p.applyTimeout(actorID, channelID, targetID, duration.Duration, duration.Label); err != nil {
 		return "", err
 	}
-	if restriction == nil {
-		restriction = &kvstore.Restriction{}
-	}
-	restriction.TimeoutUntil = p.now() + duration.Duration.Milliseconds()
-	restriction.TimeoutLabel = duration.Label
-	restriction.ByUserID = actorID
-	restriction.CreateAt = p.now()
-	p.indexRestriction(channelID, targetID)
-	if err := p.kvstore.SetRestriction(channelID, targetID, restriction); err != nil {
-		return "", err
-	}
-	p.publishMembersChanged(channelID)
 	p.dmFromBot(targetID, fmt.Sprintf(
 		"You've been timed out in %s for %s. You stay in the channel but can't post or react until the timeout ends.",
 		p.channelLink(channelID), duration.Label,
 	))
 	return duration.Label, nil
+}
+
+// applyTimeout records a timeout once the actor's permission is settled: by
+// timeoutUser for moderators, or by the flood limit for the moderation bot.
+// Callers tell the member why.
+func (p *Plugin) applyTimeout(actorID, channelID, targetID string, duration time.Duration, label string) error {
+	restriction, err := p.kvstore.GetRestriction(channelID, targetID)
+	if err != nil {
+		return err
+	}
+	if restriction == nil {
+		restriction = &kvstore.Restriction{}
+	}
+	restriction.TimeoutUntil = p.now() + duration.Milliseconds()
+	restriction.TimeoutLabel = label
+	restriction.ByUserID = actorID
+	restriction.CreateAt = p.now()
+	p.indexRestriction(channelID, targetID)
+	if err := p.kvstore.SetRestriction(channelID, targetID, restriction); err != nil {
+		return err
+	}
+	p.publishMembersChanged(channelID)
+	return nil
 }
 
 // liftRestrictions clears any mute or timeout on a member in a channel.

@@ -23,10 +23,10 @@ type fakeKVStore struct {
 	bans         map[string]*kvstore.Ban
 	moderators   map[string][]string
 
-	// dmMu guards the direct message state, which tests use concurrently.
-	dmMu       sync.Mutex
-	dmContacts map[string][]kvstore.DMContact
-	dmBlocks   map[string]*kvstore.DMBlock
+	// spamMu guards the spam limit state, which tests use concurrently.
+	spamMu       sync.Mutex
+	spamContacts map[string][]kvstore.SpamContact // keyed by scope + user ID
+	spamBlocks   map[string]*kvstore.SpamBlock
 }
 
 func newFakeKVStore() *fakeKVStore {
@@ -35,8 +35,8 @@ func newFakeKVStore() *fakeKVStore {
 		restrictions: map[string]*kvstore.Restriction{},
 		bans:         map[string]*kvstore.Ban{},
 		moderators:   map[string][]string{},
-		dmContacts:   map[string][]kvstore.DMContact{},
-		dmBlocks:     map[string]*kvstore.DMBlock{},
+		spamContacts: map[string][]kvstore.SpamContact{},
+		spamBlocks:   map[string]*kvstore.SpamBlock{},
 	}
 }
 
@@ -99,33 +99,33 @@ func (f *fakeKVStore) DeleteBan(userID string) error {
 	return nil
 }
 
-func (f *fakeKVStore) GetDMContacts(userID string) ([]kvstore.DMContact, error) {
-	f.dmMu.Lock()
-	defer f.dmMu.Unlock()
-	return slices.Clone(f.dmContacts[userID]), nil
+func (f *fakeKVStore) GetSpamContacts(scope, userID string) ([]kvstore.SpamContact, error) {
+	f.spamMu.Lock()
+	defer f.spamMu.Unlock()
+	return slices.Clone(f.spamContacts[scope+userID]), nil
 }
 
-func (f *fakeKVStore) SaveDMContacts(userID string, contacts []kvstore.DMContact, _ time.Duration) error {
-	f.dmMu.Lock()
-	defer f.dmMu.Unlock()
-	f.dmContacts[userID] = slices.Clone(contacts)
+func (f *fakeKVStore) SaveSpamContacts(scope, userID string, contacts []kvstore.SpamContact, _ time.Duration) error {
+	f.spamMu.Lock()
+	defer f.spamMu.Unlock()
+	f.spamContacts[scope+userID] = slices.Clone(contacts)
 	return nil
 }
 
-func (f *fakeKVStore) GetDMBlock(userID string) (*kvstore.DMBlock, error) {
-	f.dmMu.Lock()
-	defer f.dmMu.Unlock()
-	return f.dmBlocks[userID], nil
+func (f *fakeKVStore) GetSpamBlock(scope, userID string) (*kvstore.SpamBlock, error) {
+	f.spamMu.Lock()
+	defer f.spamMu.Unlock()
+	return f.spamBlocks[scope+userID], nil
 }
 
-func (f *fakeKVStore) TrySetDMBlock(userID string, block *kvstore.DMBlock, _ time.Duration) (bool, error) {
-	f.dmMu.Lock()
-	defer f.dmMu.Unlock()
+func (f *fakeKVStore) TrySetSpamBlock(scope, userID string, block *kvstore.SpamBlock, _ time.Duration) (bool, error) {
+	f.spamMu.Lock()
+	defer f.spamMu.Unlock()
 	// Expired blocks are replaced, as the KV store's expiry would.
-	if existing := f.dmBlocks[userID]; existing != nil && existing.Until > model.GetMillis() {
+	if existing := f.spamBlocks[scope+userID]; existing != nil && existing.Until > model.GetMillis() {
 		return false, nil
 	}
-	f.dmBlocks[userID] = block
+	f.spamBlocks[scope+userID] = block
 	return true, nil
 }
 

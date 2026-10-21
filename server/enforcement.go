@@ -9,15 +9,15 @@ import (
 
 // MessageWillBePosted blocks posts from members who are muted or timed out in
 // the channel, from banned members in case their account was reactivated
-// outside the plugin, and new direct messages from members who started too
-// many conversations too quickly.
+// outside the plugin, and posts that break a spam limit: starting too many
+// direct conversations, posting in too many channels, or flooding one.
 func (p *Plugin) MessageWillBePosted(_ *plugin.Context, post *model.Post) (*model.Post, string) {
 	if post == nil || post.UserId == "" || post.UserId == p.botUserID || post.IsSystemMessage() {
 		return post, ""
 	}
 	reason := p.postingBlockedReason(post.ChannelId, post.UserId)
 	if reason == "" {
-		reason = p.massDMBlockedReason(post)
+		reason = p.spamBlockedReason(post)
 	}
 	if reason != "" {
 		// The webapp only shows a failed post with "Retry" for a rejected

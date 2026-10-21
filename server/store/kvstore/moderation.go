@@ -14,8 +14,11 @@ const (
 	restrictionKeyPrefix  = "restrict_"
 	banKeyPrefix          = "ban_"
 	moderatorsKeyPrefix   = "mods_"
-	dmContactsKeyPrefix   = "dmrate_"
-	dmBlockKeyPrefix      = "dmblock_"
+
+	// Spam limit keys are the scope followed by these suffixes, for
+	// example "dmrate_<userID>" and "chblock_<userID>".
+	spamContactsKeyInfix = "rate_"
+	spamBlockKeyInfix    = "block_"
 )
 
 type Client struct {
@@ -175,35 +178,35 @@ func (kv Client) SaveModerators(channelID string, userIDs []string) error {
 	return nil
 }
 
-func (kv Client) GetDMContacts(userID string) ([]DMContact, error) {
-	var contacts []DMContact
-	if err := kv.client.KV.Get(dmContactsKeyPrefix+userID, &contacts); err != nil {
-		return nil, errors.Wrap(err, "failed to get direct message contacts")
+func (kv Client) GetSpamContacts(scope, userID string) ([]SpamContact, error) {
+	var contacts []SpamContact
+	if err := kv.client.KV.Get(scope+spamContactsKeyInfix+userID, &contacts); err != nil {
+		return nil, errors.Wrap(err, "failed to get spam limit contacts")
 	}
 	return contacts, nil
 }
 
-func (kv Client) SaveDMContacts(userID string, contacts []DMContact, ttl time.Duration) error {
-	if _, err := kv.client.KV.Set(dmContactsKeyPrefix+userID, contacts, pluginapi.SetExpiry(ttl)); err != nil {
-		return errors.Wrap(err, "failed to save direct message contacts")
+func (kv Client) SaveSpamContacts(scope, userID string, contacts []SpamContact, ttl time.Duration) error {
+	if _, err := kv.client.KV.Set(scope+spamContactsKeyInfix+userID, contacts, pluginapi.SetExpiry(ttl)); err != nil {
+		return errors.Wrap(err, "failed to save spam limit contacts")
 	}
 	return nil
 }
 
-func (kv Client) GetDMBlock(userID string) (*DMBlock, error) {
-	var block *DMBlock
-	if err := kv.client.KV.Get(dmBlockKeyPrefix+userID, &block); err != nil {
-		return nil, errors.Wrap(err, "failed to get direct message block")
+func (kv Client) GetSpamBlock(scope, userID string) (*SpamBlock, error) {
+	var block *SpamBlock
+	if err := kv.client.KV.Get(scope+spamBlockKeyInfix+userID, &block); err != nil {
+		return nil, errors.Wrap(err, "failed to get spam limit block")
 	}
 	return block, nil
 }
 
-func (kv Client) TrySetDMBlock(userID string, block *DMBlock, ttl time.Duration) (bool, error) {
+func (kv Client) TrySetSpamBlock(scope, userID string, block *SpamBlock, ttl time.Duration) (bool, error) {
 	// An atomic set with no old value only inserts, replacing an expired
 	// value but never a live one, so one caller wins across the cluster.
-	created, err := kv.client.KV.Set(dmBlockKeyPrefix+userID, block, pluginapi.SetAtomic(nil), pluginapi.SetExpiry(ttl))
+	created, err := kv.client.KV.Set(scope+spamBlockKeyInfix+userID, block, pluginapi.SetAtomic(nil), pluginapi.SetExpiry(ttl))
 	if err != nil {
-		return false, errors.Wrap(err, "failed to set direct message block")
+		return false, errors.Wrap(err, "failed to set spam limit block")
 	}
 	return created, nil
 }

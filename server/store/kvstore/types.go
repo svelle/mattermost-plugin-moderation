@@ -83,17 +83,23 @@ type BannedIdentity struct {
 	PlaceholderUsername string `json:"placeholder_username"`
 }
 
-// DMContact is a direct or group message conversation a member started: the
+// Spam limit scopes: direct and group messages, and team channels.
+const (
+	SpamScopeDM      = "dm"
+	SpamScopeChannel = "ch"
+)
+
+// SpamContact is a conversation or channel a member started posting in: the
 // first time they posted in it, and how many people it reached.
-type DMContact struct {
+type SpamContact struct {
 	ChannelID string `json:"channel_id"`
 	FirstAt   int64  `json:"first_at"`
 	People    int    `json:"people"`
 }
 
-// DMBlock pauses a member's new direct messages until Until (milliseconds
-// since epoch) after they started too many conversations too quickly.
-type DMBlock struct {
+// SpamBlock stops a member from posting in new conversations or channels
+// until Until (milliseconds since epoch) after they hit a spam limit.
+type SpamBlock struct {
 	Until    int64 `json:"until"`
 	CreateAt int64 `json:"create_at"`
 }

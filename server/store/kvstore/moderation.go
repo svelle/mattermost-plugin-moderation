@@ -64,6 +64,22 @@ func IsRestrictionKey(key string) bool {
 	return strings.HasPrefix(key, restrictionKeyPrefix)
 }
 
+// ParseRestrictionKey returns the channel and user a restriction key is for.
+func ParseRestrictionKey(key string) (channelID, userID string, ok bool) {
+	rest, found := strings.CutPrefix(key, restrictionKeyPrefix)
+	if !found {
+		return "", "", false
+	}
+	channelID, userID, ok = strings.Cut(rest, "_")
+	return channelID, userID, ok && channelID != "" && userID != ""
+}
+
+// ParseBanKey returns the user a ban key is for.
+func ParseBanKey(key string) (userID string, ok bool) {
+	userID, ok = strings.CutPrefix(key, banKeyPrefix)
+	return userID, ok && userID != ""
+}
+
 func (kv Client) GetRestriction(channelID, userID string) (*Restriction, error) {
 	return kv.GetRestrictionByKey(RestrictionKey(channelID, userID))
 }
@@ -99,6 +115,14 @@ func (kv Client) ListRestrictionKeys(page, perPage int) ([]string, bool, error) 
 		}
 	}
 	return restrictionKeys, len(keys) == perPage, nil
+}
+
+func (kv Client) ListKeys(page, perPage int) ([]string, error) {
+	keys, err := kv.client.KV.ListKeys(page, perPage)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list keys")
+	}
+	return keys, nil
 }
 
 func (kv Client) DeleteByKey(key string) error {

@@ -44,6 +44,13 @@ type Plugin struct {
 	// configuration is the active plugin configuration. Consult getConfiguration and
 	// setConfiguration for usage.
 	configuration *configuration
+
+	// index tracks bans and restrictions so the post hooks can skip KV
+	// reads for members who have neither.
+	index moderationIndex
+
+	// stopIndex stops the goroutine that keeps index up to date.
+	stopIndex chan struct{}
 }
 
 // OnActivate is invoked when the plugin is activated. If an error is returned, the plugin will be deactivated.
@@ -64,6 +71,9 @@ func (p *Plugin) OnActivate() error {
 
 	p.router = p.initRouter()
 
+	p.stopIndex = make(chan struct{})
+	go p.maintainIndex(p.stopIndex)
+
 	job, err := cluster.Schedule(
 		p.API,
 		"CleanupExpiredTimeouts",
@@ -81,6 +91,9 @@ func (p *Plugin) OnActivate() error {
 
 // OnDeactivate is invoked when the plugin is deactivated.
 func (p *Plugin) OnDeactivate() error {
+	if p.stopIndex != nil {
+		close(p.stopIndex)
+	}
 	if p.backgroundJob != nil {
 		if err := p.backgroundJob.Close(); err != nil {
 			p.API.LogError("Failed to close background job", "err", err)

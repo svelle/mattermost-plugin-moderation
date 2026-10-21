@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/mattermost/mattermost/server/public/model"
@@ -56,6 +57,19 @@ func (f *fakeKVStore) DeleteRestriction(channelID, userID string) error {
 func (f *fakeKVStore) ListRestrictionKeys(int, int) ([]string, bool, error) { return nil, false, nil }
 func (f *fakeKVStore) GetRestrictionByKey(key string) (*kvstore.Restriction, error) {
 	return f.restrictions[key], nil
+}
+
+func (f *fakeKVStore) ListKeys(page, perPage int) ([]string, error) {
+	keys := []string{}
+	for key := range f.restrictions {
+		keys = append(keys, key)
+	}
+	for userID := range f.bans {
+		keys = append(keys, "ban_"+userID)
+	}
+	slices.Sort(keys)
+	start := min(page*perPage, len(keys))
+	return keys[start:min(start+perPage, len(keys))], nil
 }
 
 func (f *fakeKVStore) DeleteByKey(key string) error {
@@ -119,6 +133,7 @@ func newTestPlugin(t *testing.T, members map[string]bool) (*Plugin, *plugintest.
 		},
 	).Maybe()
 	api.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
+	api.On("PublishPluginClusterEvent", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	kv := newFakeKVStore()
 	p := &Plugin{botUserID: "bot"}

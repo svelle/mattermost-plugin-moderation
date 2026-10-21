@@ -51,6 +51,7 @@ func (p *Plugin) muteUser(actorID, channelID, targetID string) error {
 	restriction.Muted = true
 	restriction.ByUserID = actorID
 	restriction.CreateAt = p.now()
+	p.indexRestriction(channelID, targetID)
 	if err := p.kvstore.SetRestriction(channelID, targetID, restriction); err != nil {
 		return err
 	}
@@ -81,6 +82,7 @@ func (p *Plugin) timeoutUser(actorID, channelID, targetID, durationID string) (s
 	restriction.TimeoutLabel = duration.Label
 	restriction.ByUserID = actorID
 	restriction.CreateAt = p.now()
+	p.indexRestriction(channelID, targetID)
 	if err := p.kvstore.SetRestriction(channelID, targetID, restriction); err != nil {
 		return "", err
 	}
@@ -199,6 +201,7 @@ func (p *Plugin) banUser(actorID, channelID, targetID string, removePicture bool
 			Nickname:  target.Nickname,
 		}
 	}
+	p.indexBan(targetID)
 	if err := p.kvstore.SetBan(targetID, ban); err != nil {
 		// Keep account state and ban record consistent: reactivate rather
 		// than leave the member deactivated without a plugin ban record.
@@ -520,7 +523,9 @@ func (p *Plugin) listMembers(channelID, term string) ([]*MemberInfo, error) {
 		if user.IsBot {
 			continue
 		}
-		isAdmin := p.client.User.HasPermissionTo(user.Id, model.PermissionManageSystem) ||
+		// System admins are read from the user's roles, saving a
+		// permission check per member.
+		isAdmin := user.IsSystemAdmin() ||
 			(channel.TeamId != "" && p.client.User.HasPermissionToTeam(user.Id, channel.TeamId, model.PermissionManageTeam))
 		info := &MemberInfo{
 			UserID:      user.Id,
@@ -529,14 +534,18 @@ func (p *Plugin) listMembers(channelID, term string) ([]*MemberInfo, error) {
 			IsModerator: isAdmin || moderatorSet[user.Id] || channelAdminSet[user.Id],
 			IsAdmin:     isAdmin,
 		}
-		if ban, banErr := p.kvstore.GetBan(user.Id); banErr == nil && ban != nil {
-			info.IsBanned = true
+		if p.index.mayBeBanned(user.Id) {
+			if ban, banErr := p.kvstore.GetBan(user.Id); banErr == nil && ban != nil {
+				info.IsBanned = true
+			}
 		}
-		if restriction, rErr := p.kvstore.GetRestriction(channelID, user.Id); rErr == nil && restriction != nil {
-			info.Muted = restriction.Muted
-			if restriction.TimedOutNow(now) {
-				info.TimeoutUntil = restriction.TimeoutUntil
-				info.TimeoutLabel = restriction.TimeoutLabel
+		if p.index.mayBeRestricted(channelID, user.Id) {
+			if restriction, rErr := p.kvstore.GetRestriction(channelID, user.Id); rErr == nil && restriction != nil {
+				info.Muted = restriction.Muted
+				if restriction.TimedOutNow(now) {
+					info.TimeoutUntil = restriction.TimeoutUntil
+					info.TimeoutLabel = restriction.TimeoutLabel
+				}
 			}
 		}
 		// The unfiltered listing only surfaces members with an elevated role

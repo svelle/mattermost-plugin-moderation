@@ -10,6 +10,10 @@ A Mattermost plugin that adds community moderation tools directly to the channel
 - Reports are private: the reported member never sees who submitted them.
 - **Abuse protection**: reports are rate limited per member (5 per 10 minutes by default, configurable), and re-reporting the same message or member while a report is still open is rejected — so nobody can flood the moderation queue.
 
+| Report a message | Duplicate reports are rejected |
+| --- | --- |
+| <img src="docs/screenshots/report-message-modal.png" alt="Report message modal" width="720"> | <img src="docs/screenshots/duplicate-report-rejected.png" alt="Duplicate report rejected" width="720"> |
+
 ### For moderators
 
 - **Moderation panel** in the channel header (shield icon) with a live badge showing the number of open reports in the channel.
@@ -19,6 +23,12 @@ A Mattermost plugin that adds community moderation tools directly to the channel
 - **Warnings** are delivered as a direct message from the Community Moderation bot, as are notices about mutes, timeouts, and deleted messages.
 - New reports are DM'd to the channel's moderators (or to system admins when a channel has no moderators yet).
 
+| Report queue | Message actions for moderators |
+| --- | --- |
+| <img src="docs/screenshots/moderation-panel-report-queue.png" alt="Moderation panel with the report queue" width="720"> | <img src="docs/screenshots/moderator-message-actions.png" alt="Moderator message actions" width="720"> |
+| Timeout from a report | Notice sent to the timed-out member |
+| <img src="docs/screenshots/timeout-modal.png" alt="Timeout modal" width="720"> | <img src="docs/screenshots/timed-out-member-bot-notice.png" alt="Timeout notice DM from the bot" width="720"> |
+
 ### For admins
 
 Admins (system admins and team admins) can do everything moderators can, plus:
@@ -27,6 +37,12 @@ Admins (system admins and team admins) can do everything moderators can, plus:
 - **Ban from server**: deactivates the account so the member can't sign back in. Bans can be reversed from the member list.
 - Moderators can **escalate** reports to admins, which notifies every system admin by DM.
 
+| Members & roles tab | Profile popover actions |
+| --- | --- |
+| <img src="docs/screenshots/members-and-roles-tab.png" alt="Members and roles tab" width="720"> | <img src="docs/screenshots/profile-popover-moderation-actions.png" alt="Profile popover moderation actions" width="720"> |
+| Ban confirmation | Banned member's messages hidden |
+| <img src="docs/screenshots/ban-confirmation.png" alt="Ban confirmation" width="720"> | <img src="docs/screenshots/after-ban-messages-hidden.png" alt="Messages hidden after a ban" width="720"> |
+
 ### Settings
 
 Under **System Console → Plugins → Community Moderation**:
@@ -34,6 +50,8 @@ Under **System Console → Plugins → Community Moderation**:
 - **Hide messages from banned members** — when a member is banned, hide their recent messages in the channel where the ban was issued.
 - **Banned message display** — show a placeholder ("Message hidden — this member was banned from the server.") in place of each hidden message, or remove the messages entirely.
 - **Maximum reports per member** and **report rate limit window** — the rolling per-member cap on report submissions (default 5 per 10 minutes; set the cap to 0 to disable).
+
+<img src="docs/screenshots/system-console-settings.png" alt="Plugin settings in the System Console" width="720">
 
 ## Roles
 

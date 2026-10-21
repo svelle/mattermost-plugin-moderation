@@ -40,6 +40,12 @@ func (p *Plugin) createReport(reporterID, channelID, postID, targetID, reasonID,
 		return nil, errors.Wrap(err, "reported member not found")
 	}
 
+	// Message reports are scoped by the message itself; member reports need
+	// the member to be in the channel the report is filed in.
+	if postID == "" && !p.isChannelMember(channelID, targetID) {
+		return nil, errors.New("that person isn't a member of this channel")
+	}
+
 	excerpt := ""
 	if postID != "" {
 		post, err := p.client.Post.GetPost(postID)
@@ -215,6 +221,21 @@ func (p *Plugin) updateReportStatus(channelID, reportID, status, resolution, act
 // resolveOpenReportsForUser resolves every open or escalated report against a
 // member in a channel, used when a moderation action settles the matter.
 func (p *Plugin) resolveOpenReportsForUser(channelID, targetID, resolution, actorID string) {
+	p.resolveReports(channelID, resolution, actorID, func(r *kvstore.Report) bool {
+		return r.TargetUserID == targetID
+	})
+}
+
+// resolveOpenReportsForPost resolves every open or escalated report about a
+// specific message, used when the message is deleted.
+func (p *Plugin) resolveOpenReportsForPost(channelID, postID, resolution, actorID string) {
+	p.resolveReports(channelID, resolution, actorID, func(r *kvstore.Report) bool {
+		return r.PostID == postID
+	})
+}
+
+// resolveReports resolves the unresolved reports in a channel that match.
+func (p *Plugin) resolveReports(channelID, resolution, actorID string, match func(*kvstore.Report) bool) {
 	unlock, err := p.lockChannel(lockPrefixReports, channelID)
 	if err != nil {
 		p.API.LogError("Failed to lock reports", "channel_id", channelID, "error", err.Error())
@@ -229,7 +250,7 @@ func (p *Plugin) resolveOpenReportsForUser(channelID, targetID, resolution, acto
 	}
 	changed := false
 	for _, r := range reports {
-		if r.TargetUserID == targetID && r.Status != kvstore.ReportStatusResolved {
+		if r.Status != kvstore.ReportStatusResolved && match(r) {
 			r.Status = kvstore.ReportStatusResolved
 			r.Resolution = resolution
 			r.ResolvedByID = actorID
@@ -259,11 +280,28 @@ func (p *Plugin) escalateReportsForUser(channelID, targetID, actorID string) err
 		unlock()
 		return err
 	}
+	escalated, alreadyEscalated := 0, 0
 	for _, r := range reports {
-		if r.TargetUserID == targetID && r.Status == kvstore.ReportStatusOpen {
+		if r.TargetUserID != targetID {
+			continue
+		}
+		switch r.Status {
+		case kvstore.ReportStatusOpen:
 			r.Status = kvstore.ReportStatusEscalated
 			r.UpdateAt = p.now()
+			escalated++
+		case kvstore.ReportStatusEscalated:
+			alreadyEscalated++
 		}
+	}
+	// Only notify admins about new escalations, so repeated clicks can't
+	// spam every system admin.
+	if escalated == 0 {
+		unlock()
+		if alreadyEscalated > 0 {
+			return errors.New("reports about this member are already escalated and waiting on an admin")
+		}
+		return errors.New("there are no open reports about this member to escalate — report the message first")
 	}
 	if err := p.kvstore.SaveReports(channelID, reports); err != nil {
 		unlock()
@@ -371,21 +409,25 @@ func (p *Plugin) notifyAdminsOfEscalation(channelID, targetID, actorID string) {
 }
 
 func (p *Plugin) systemAdminIDs() []string {
-	admins, err := p.client.User.List(&model.UserGetOptions{
-		Role:    model.SystemAdminRoleId,
-		Page:    0,
-		PerPage: 50,
-	})
-	if err != nil {
-		p.API.LogError("Failed to list system admins", "error", err.Error())
-		return nil
-	}
-	ids := make([]string, 0, len(admins))
-	for _, admin := range admins {
-		if admin.IsBot {
-			continue
+	const perPage = 100
+	var ids []string
+	for page := 0; ; page++ {
+		admins, err := p.client.User.List(&model.UserGetOptions{
+			Role:    model.SystemAdminRoleId,
+			Page:    page,
+			PerPage: perPage,
+		})
+		if err != nil {
+			p.API.LogError("Failed to list system admins", "error", err.Error())
+			return ids
 		}
-		ids = append(ids, admin.Id)
+		for _, admin := range admins {
+			if !admin.IsBot {
+				ids = append(ids, admin.Id)
+			}
+		}
+		if len(admins) < perPage {
+			return ids
+		}
 	}
-	return ids
 }

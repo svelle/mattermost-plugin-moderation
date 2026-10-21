@@ -3,6 +3,7 @@ import {useDispatch} from 'react-redux';
 
 import {closeConfirmModal, runConfirmAction} from '../../actions';
 import type {ConfirmModalState} from '../../types';
+import Avatar from '../avatar';
 import {useEscape} from '../hooks';
 import Icon from '../icons';
 import {C} from '../styles';
@@ -15,6 +16,7 @@ const ConfirmModal = ({modal}: Props) => {
     const dispatch = useDispatch();
     const dispatchThunk = dispatch as (action: unknown) => void;
     const [confirming, setConfirming] = useState(false);
+    const [optionChecked, setOptionChecked] = useState(false);
     const close = useCallback(() => dispatch(closeConfirmModal()), [dispatch]);
     useEscape(close);
 
@@ -23,7 +25,7 @@ const ConfirmModal = ({modal}: Props) => {
             return;
         }
         setConfirming(true);
-        dispatchThunk(runConfirmAction(modal.action));
+        dispatchThunk(runConfirmAction(modal.action, optionChecked));
     };
 
     return (
@@ -51,6 +53,28 @@ const ConfirmModal = ({modal}: Props) => {
                     </div>
                 </div>
                 <div style={{fontSize: 14, lineHeight: '20px', color: C.fg2, marginBottom: 20}}>{modal.body}</div>
+                {modal.option && (
+                    <label
+                        style={{display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 12px', marginBottom: 20, borderRadius: 6, cursor: 'pointer', border: `1px solid ${optionChecked ? C.red500 : C.border2}`, background: optionChecked ? C.redTint : 'transparent'}}
+                    >
+                        <input
+                            type='checkbox'
+                            checked={optionChecked}
+                            onChange={(e) => setOptionChecked(e.target.checked)}
+                            style={{width: 16, height: 16, margin: '2px 0 0', accentColor: C.red500, flexShrink: 0, cursor: 'pointer'}}
+                        />
+                        <span style={{flex: 1}}>
+                            <span style={{display: 'block', fontSize: 14, fontWeight: 600, color: C.fg1}}>{modal.option.label}</span>
+                            <span style={{display: 'block', fontSize: 12, lineHeight: '17px', color: C.fg3, marginTop: 2}}>{modal.option.description}</span>
+                        </span>
+                        {modal.option.previewUserId && (
+                            <Avatar
+                                userId={modal.option.previewUserId}
+                                size={40}
+                            />
+                        )}
+                    </label>
+                )}
                 <div style={{display: 'flex', justifyContent: 'flex-end', gap: 8}}>
                     <button
                         onClick={close}

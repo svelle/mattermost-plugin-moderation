@@ -199,8 +199,12 @@ export const setModerator = (channelId: string, userId: string, targetName: stri
 export const unbanUser = (channelId: string, userId: string, targetName: string) => {
     return async (dispatch: ThunkDispatch) => {
         try {
-            await client.memberAction('unban', {channel_id: channelId, user_id: userId});
-            dispatch(showToast(`${targetName} has been unbanned`, 'shield'));
+            const result = await client.memberAction('unban', {channel_id: channelId, user_id: userId});
+            if (result.warning) {
+                dispatch(showToast(`Unbanned, but ${result.warning.charAt(0).toLowerCase()}${result.warning.slice(1)}`, 'alert-circle-outline'));
+            } else {
+                dispatch(showToast(`${targetName} has been unbanned`, 'shield'));
+            }
             dispatch(refreshModerationData(channelId));
         } catch (err) {
             dispatch(showErrorToast(err));
@@ -208,8 +212,9 @@ export const unbanUser = (channelId: string, userId: string, targetName: string)
     };
 };
 
-// runConfirmAction executes the action approved in the confirm modal.
-export const runConfirmAction = (action: ConfirmAction) => {
+// runConfirmAction executes the action approved in the confirm modal;
+// optionChecked is the state of the modal's extra checkbox, if it has one.
+export const runConfirmAction = (action: ConfirmAction, optionChecked = false) => {
     return async (dispatch: ThunkDispatch) => {
         dispatch(closeConfirmModal());
         try {
@@ -218,10 +223,20 @@ export const runConfirmAction = (action: ConfirmAction) => {
                 await client.memberAction('delete_post', {post_id: action.postId, channel_id: action.channelId, report_id: action.reportId});
                 dispatch(showToast('Message deleted', 'trash-can-outline'));
                 break;
-            case 'ban':
-                await client.memberAction('ban', {channel_id: action.channelId, user_id: action.targetUserId, report_id: action.reportId});
-                dispatch(showToast(`${action.targetName} has been banned from the server`, 'cancel'));
+            case 'ban': {
+                const result = await client.memberAction('ban', {
+                    channel_id: action.channelId,
+                    user_id: action.targetUserId,
+                    report_id: action.reportId,
+                    remove_picture: optionChecked,
+                });
+                if (result.warning) {
+                    dispatch(showToast(`Banned, but ${result.warning.charAt(0).toLowerCase()}${result.warning.slice(1)}`, 'alert-circle-outline'));
+                } else {
+                    dispatch(showToast(`${action.targetName} has been banned from the server`, 'cancel'));
+                }
                 break;
+            }
             case 'remove':
                 await client.memberAction('remove', {channel_id: action.channelId, user_id: action.targetUserId});
                 dispatch(showToast(`${action.targetName} removed from this channel`, 'close'));
@@ -251,6 +266,11 @@ export const confirmBan = (channelId: string, targetUserId: string, targetName: 
         body: `${targetName} will be removed from every channel and blocked from signing back in. You can reverse this later from the member list.`,
         confirmLabel: 'Ban member',
         action: {kind: 'ban', channelId, targetUserId, targetName, reportId},
+        option: {
+            label: 'Also remove their profile picture',
+            description: 'Use this if the picture itself is offensive. It\'s replaced with a neutral placeholder and won\'t come back if the ban is lifted.',
+            previewUserId: targetUserId,
+        },
     });
 };
 

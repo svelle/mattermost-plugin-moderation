@@ -30,7 +30,7 @@ import ModerationRoot from './components/modals/root';
 import RHSPanel from './components/rhs';
 import PopoverUserActions from './components/user_actions';
 import reducer from './reducer';
-import {getCurrentChannelId, getStatusForChannel} from './selectors';
+import {getCurrentChannelId, getPostingBlockedReason, getStatusForChannel} from './selectors';
 
 const MAX_EXCERPT_LENGTH = 300;
 
@@ -196,6 +196,26 @@ export default class Plugin {
             (post) => dispatch(confirmBan(post.channel_id, post.user_id, authorName(post))),
             (post) => channelStatus(post).is_admin,
         );
+
+        // Muted and timed-out members are stopped before the message is sent,
+        // so they see the reason under the message box instead of a failed
+        // post. The server enforces the same rules for every client.
+        registry.registerMessageWillBePostedHook((post: Post) => {
+            const reason = getPostingBlockedReason(store.getState(), post.channel_id);
+            return reason ? {error: {message: reason}} : {post};
+        });
+
+        // Older servers don't offer the edit hook; the server still rejects
+        // edits from restricted members there.
+        if (typeof registry.registerMessageWillBeUpdatedHook === 'function') {
+            registry.registerMessageWillBeUpdatedHook(async (post: Partial<Post>, oldPost: Post) => {
+                const reason = getPostingBlockedReason(store.getState(), oldPost.channel_id);
+                if (reason && oldPost.user_id === store.getState().entities.users.currentUserId) {
+                    return {error: {message: reason}};
+                }
+                return {post: post as Post};
+            });
+        }
 
         registry.registerWebSocketEventHandler(
             `custom_${manifest.id}_reports_changed`,

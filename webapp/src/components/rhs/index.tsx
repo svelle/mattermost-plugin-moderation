@@ -8,8 +8,22 @@ import ReportCard from './report_card';
 
 import {fetchMembers, fetchReports, setRHSTab} from '../../actions';
 import {getCurrentChannelId, getCurrentUserId, getStatusForCurrentChannel, pluginState} from '../../selectors';
+import type {Report} from '../../types';
 import Icon from '../icons';
 import {C} from '../styles';
+
+// sortForQueue lists reports that still need action first, newest first,
+// followed by resolved reports, so handled items don't push the queue down.
+const sortForQueue = (reports: Report[]): Report[] => {
+    return [...reports].sort((a, b) => {
+        const aResolved = a.status === 'resolved';
+        const bResolved = b.status === 'resolved';
+        if (aResolved !== bResolved) {
+            return aResolved ? 1 : -1;
+        }
+        return b.create_at - a.create_at;
+    });
+};
 
 // RHSPanel is the "Moderation" right-hand sidebar: the report queue for
 // moderators, plus a members & roles tab for admins.
@@ -109,7 +123,7 @@ const RHSPanel = () => {
                             {'Reports from members of this channel will show up here.'}
                         </div>
                     )}
-                    {(reports || []).map((report) => (
+                    {sortForQueue(reports || []).map((report) => (
                         <ReportCard
                             key={report.id}
                             report={report}

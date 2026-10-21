@@ -85,6 +85,7 @@ type MemberAction = {
     report_id?: string;
     duration?: string;
     moderator?: boolean;
+    remove_picture?: boolean;
 };
 
 export const memberAction = (action: string, body: MemberAction) => {

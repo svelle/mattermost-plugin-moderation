@@ -55,8 +55,30 @@ func (r *Restriction) Active(nowMillis int64) bool {
 }
 
 // Ban is a server-wide ban. Banned members are deactivated and can't sign in.
+// ChannelID and TeamID record where the ban was issued; bans recorded before
+// they were added leave them empty.
 type Ban struct {
-	UserID   string `json:"user_id"`
-	ByUserID string `json:"by_user_id"`
-	CreateAt int64  `json:"create_at"`
+	UserID    string `json:"user_id"`
+	ByUserID  string `json:"by_user_id"`
+	ChannelID string `json:"channel_id,omitempty"`
+	TeamID    string `json:"team_id,omitempty"`
+	CreateAt  int64  `json:"create_at"`
+
+	// Identity, when set, holds the member's profile from before the ban
+	// replaced their username and name, so an unban can restore it.
+	Identity *BannedIdentity `json:"identity,omitempty"`
+
+	// PictureRemoved records that the ban replaced the member's profile
+	// picture with a placeholder.
+	PictureRemoved bool `json:"picture_removed,omitempty"`
+}
+
+// BannedIdentity is a banned member's original username and name, plus the
+// placeholder username they were given.
+type BannedIdentity struct {
+	Username            string `json:"username"`
+	FirstName           string `json:"first_name,omitempty"`
+	LastName            string `json:"last_name,omitempty"`
+	Nickname            string `json:"nickname,omitempty"`
+	PlaceholderUsername string `json:"placeholder_username"`
 }

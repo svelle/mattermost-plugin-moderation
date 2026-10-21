@@ -28,6 +28,10 @@ type configuration struct {
 	// channel where the ban was issued.
 	HideBannedMessages bool
 
+	// HideBannedIdentity replaces a banned member's username and name with a
+	// placeholder everywhere, restoring them if the ban is lifted.
+	HideBannedIdentity bool
+
 	// BannedMessageMode controls how hidden messages are displayed:
 	// "placeholder" replaces the message text with a tombstone, "remove"
 	// deletes the messages entirely.
@@ -58,6 +62,7 @@ func (p *Plugin) getConfiguration() *configuration {
 	if p.configuration == nil {
 		return &configuration{
 			HideBannedMessages:      true,
+			HideBannedIdentity:      true,
 			BannedMessageMode:       BannedMessageModePlaceholder,
 			ReportRateLimit:         5,
 			ReportRateWindowMinutes: 10,

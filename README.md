@@ -10,30 +10,54 @@ A Mattermost plugin that adds community moderation tools directly to the channel
 - Reports are private: the reported member never sees who submitted them.
 - **Abuse protection**: reports are rate limited per member (5 per 10 minutes by default, configurable), and re-reporting the same message or member while a report is still open is rejected — so nobody can flood the moderation queue.
 
+| Report a message | Duplicate reports are rejected |
+| --- | --- |
+| <img src="docs/screenshots/report-message-modal.png" alt="Report message modal" width="720"> | <img src="docs/screenshots/duplicate-report-rejected.png" alt="Duplicate report rejected" width="720"> |
+
 ### For moderators
 
 - **Moderation panel** in the channel header (shield icon) with a live badge showing the number of open reports in the channel.
 - **Report queue**: every report shows its status (needs review, escalated, resolved), reason, reporter, the reported member, and an excerpt of the reported message. Act on a report directly from the card — timeout, mute, escalate to admins, or dismiss.
 - **Message actions** from any message's dropdown menu: mute in channel, timeout, warn, and delete message.
-- **Mutes and timeouts are enforced server-side.** Muted or timed-out members stay in the channel but can't post or react until the restriction ends; timeouts run for 5 minutes, 1 hour, 24 hours, or 7 days.
+- **Mutes and timeouts are enforced server-side.** Muted or timed-out members stay in the channel but can't post, edit their messages, or react until the restriction ends; timeouts run for 5 minutes, 1 hour, 24 hours, or 7 days. They're told why right under the message box, before anything is sent.
+- Muting or timing out a member from the queue resolves all of their open reports in the channel; deleting a message resolves every report about it.
+- Moderation actions only apply to members of the channel they're taken in.
 - **Warnings** are delivered as a direct message from the Community Moderation bot, as are notices about mutes, timeouts, and deleted messages.
 - New reports are DM'd to the channel's moderators (or to system admins when a channel has no moderators yet).
+- The queue lists reports that still need action first; resolved reports follow.
+
+| Report queue | Message actions for moderators |
+| --- | --- |
+| <img src="docs/screenshots/moderation-panel-report-queue.png" alt="Moderation panel with the report queue" width="720"> | <img src="docs/screenshots/moderator-message-actions.png" alt="Moderator message actions" width="720"> |
+| Timeout from a report | Timed-out members see why they can't post |
+| <img src="docs/screenshots/timeout-modal.png" alt="Timeout modal" width="720"> | <img src="docs/screenshots/timed-out-member-blocked.png" alt="Timed-out member blocked from posting" width="720"> |
+| Notice sent to the timed-out member | New reports are DM'd to moderators |
+| <img src="docs/screenshots/timed-out-member-bot-notice.png" alt="Timeout notice DM from the bot" width="720"> | <img src="docs/screenshots/moderator-bot-notifications.png" alt="New report notifications from the bot" width="720"> |
 
 ### For admins
 
 Admins (system admins and team admins) can do everything moderators can, plus:
 
 - **Members & roles tab** in the moderation panel: assign or remove channel moderators, lift mutes and timeouts, remove members from the channel, and ban or unban members. The list shows members with an elevated role or an active restriction; a search box finds any other channel member to elevate or manage.
-- **Ban from server**: deactivates the account so the member can't sign back in. Bans can be reversed from the member list.
-- Moderators can **escalate** reports to admins, which notifies every system admin by DM.
+- **Ban from server**: deactivates the account so the member can't sign back in, and by default replaces their username and name with a placeholder. If their profile picture is offensive too, tick **Also remove their profile picture** in the ban dialog to replace it with a neutral placeholder; otherwise the picture is kept. A removed picture isn't restored if the ban is lifted. Bans can be reversed from the member list by a system admin or an admin of the team where the ban was issued. Accounts deactivated outside the plugin can only be reactivated from the System Console.
+- Moderators can **escalate** a member's open reports to admins, which notifies every system admin by DM. Reports that are already escalated can't be escalated again.
+
+| Members & roles tab | Profile popover actions |
+| --- | --- |
+| <img src="docs/screenshots/members-and-roles-tab.png" alt="Members and roles tab" width="720"> | <img src="docs/screenshots/profile-popover-moderation-actions.png" alt="Profile popover moderation actions" width="720"> |
+| Ban confirmation | Banned members' messages and usernames hidden |
+| <img src="docs/screenshots/ban-confirmation.png" alt="Ban confirmation" width="720"> | <img src="docs/screenshots/after-ban-messages-hidden.png" alt="Messages hidden after a ban" width="720"> |
 
 ### Settings
 
 Under **System Console → Plugins → Community Moderation**:
 
 - **Hide messages from banned members** — when a member is banned, hide their recent messages in the channel where the ban was issued.
+- **Hide banned members' usernames** — replace a banned member's username and name with a placeholder (`banned-1a2b3c4d`, shown as "Banned member") everywhere they appear, so an offensive or impersonating name disappears along with the member. Unbanning restores the original username and name.
 - **Banned message display** — show a placeholder ("Message hidden — this member was banned from the server.") in place of each hidden message, or remove the messages entirely.
 - **Maximum reports per member** and **report rate limit window** — the rolling per-member cap on report submissions (default 5 per 10 minutes; set the cap to 0 to disable).
+
+<img src="docs/screenshots/system-console-settings.png" alt="Plugin settings in the System Console" width="720">
 
 ## Roles
 

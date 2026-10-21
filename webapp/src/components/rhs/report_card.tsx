@@ -128,7 +128,7 @@ const ReportCard = ({report, isAdmin}: Props) => {
                             />
                             {'Ban'}
                         </button>
-                    ) : (
+                    ) : report.status === 'open' && (
                         <button
                             style={actionButtonStyle('primary')}
                             onClick={() => dispatchThunk(escalateUser(report.channel_id, report.target_user_id))}

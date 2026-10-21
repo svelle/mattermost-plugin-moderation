@@ -3,7 +3,9 @@ package main
 import (
 	"net/http"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
@@ -20,6 +22,11 @@ type fakeKVStore struct {
 	restrictions map[string]*kvstore.Restriction
 	bans         map[string]*kvstore.Ban
 	moderators   map[string][]string
+
+	// spamMu guards the spam limit state, which tests use concurrently.
+	spamMu       sync.Mutex
+	spamContacts map[string][]kvstore.SpamContact // keyed by scope + user ID
+	spamBlocks   map[string]*kvstore.SpamBlock
 }
 
 func newFakeKVStore() *fakeKVStore {
@@ -28,6 +35,8 @@ func newFakeKVStore() *fakeKVStore {
 		restrictions: map[string]*kvstore.Restriction{},
 		bans:         map[string]*kvstore.Ban{},
 		moderators:   map[string][]string{},
+		spamContacts: map[string][]kvstore.SpamContact{},
+		spamBlocks:   map[string]*kvstore.SpamBlock{},
 	}
 }
 
@@ -67,6 +76,9 @@ func (f *fakeKVStore) ListKeys(page, perPage int) ([]string, error) {
 	for userID := range f.bans {
 		keys = append(keys, "ban_"+userID)
 	}
+	for channelID := range f.reports {
+		keys = append(keys, "reports_"+channelID)
+	}
 	slices.Sort(keys)
 	start := min(page*perPage, len(keys))
 	return keys[start:min(start+perPage, len(keys))], nil
@@ -85,6 +97,36 @@ func (f *fakeKVStore) SetBan(userID string, ban *kvstore.Ban) error {
 func (f *fakeKVStore) DeleteBan(userID string) error {
 	delete(f.bans, userID)
 	return nil
+}
+
+func (f *fakeKVStore) GetSpamContacts(scope, userID string) ([]kvstore.SpamContact, error) {
+	f.spamMu.Lock()
+	defer f.spamMu.Unlock()
+	return slices.Clone(f.spamContacts[scope+userID]), nil
+}
+
+func (f *fakeKVStore) SaveSpamContacts(scope, userID string, contacts []kvstore.SpamContact, _ time.Duration) error {
+	f.spamMu.Lock()
+	defer f.spamMu.Unlock()
+	f.spamContacts[scope+userID] = slices.Clone(contacts)
+	return nil
+}
+
+func (f *fakeKVStore) GetSpamBlock(scope, userID string) (*kvstore.SpamBlock, error) {
+	f.spamMu.Lock()
+	defer f.spamMu.Unlock()
+	return f.spamBlocks[scope+userID], nil
+}
+
+func (f *fakeKVStore) TrySetSpamBlock(scope, userID string, block *kvstore.SpamBlock, _ time.Duration) (bool, error) {
+	f.spamMu.Lock()
+	defer f.spamMu.Unlock()
+	// Expired blocks are replaced, as the KV store's expiry would.
+	if existing := f.spamBlocks[scope+userID]; existing != nil && existing.Until > model.GetMillis() {
+		return false, nil
+	}
+	f.spamBlocks[scope+userID] = block
+	return true, nil
 }
 
 func (f *fakeKVStore) GetModerators(channelID string) ([]string, error) {

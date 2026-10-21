@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/mattermost/mattermost/server/public/model"
@@ -224,6 +225,54 @@ func (p *Plugin) resolveOpenReportsForUser(channelID, targetID, resolution, acto
 	p.resolveReports(channelID, resolution, actorID, func(r *kvstore.Report) bool {
 		return r.TargetUserID == targetID
 	})
+}
+
+// resolveOpenReportsForUserEverywhere resolves every open or escalated report
+// against a member in any channel or conversation, used when a ban settles
+// the matter server-wide. issuedChannelID, where the ban was issued, is
+// always covered even if the reports can't be listed.
+func (p *Plugin) resolveOpenReportsForUserEverywhere(issuedChannelID, targetID, resolution, actorID string) {
+	channelIDs, err := p.reportChannelIDs()
+	if err != nil {
+		p.API.LogError("Failed to list report queues", "error", err.Error())
+	}
+	if !slices.Contains(channelIDs, issuedChannelID) {
+		channelIDs = append(channelIDs, issuedChannelID)
+	}
+	for _, channelID := range channelIDs {
+		// Check without the lock first, so only queues with reports about
+		// this member are locked and rewritten.
+		reports, getErr := p.kvstore.GetReports(channelID)
+		if getErr != nil {
+			p.API.LogError("Failed to get reports", "channel_id", channelID, "error", getErr.Error())
+			continue
+		}
+		if slices.ContainsFunc(reports, func(r *kvstore.Report) bool {
+			return r.TargetUserID == targetID && r.Status != kvstore.ReportStatusResolved
+		}) {
+			p.resolveOpenReportsForUser(channelID, targetID, resolution, actorID)
+		}
+	}
+}
+
+// reportChannelIDs lists every channel and conversation with a report queue.
+func (p *Plugin) reportChannelIDs() ([]string, error) {
+	const perPage = 1000
+	var ids []string
+	for page := 0; ; page++ {
+		keys, err := p.kvstore.ListKeys(page, perPage)
+		if err != nil {
+			return ids, err
+		}
+		for _, key := range keys {
+			if channelID, ok := kvstore.ParseReportsKey(key); ok {
+				ids = append(ids, channelID)
+			}
+		}
+		if len(keys) < perPage {
+			return ids, nil
+		}
+	}
 }
 
 // resolveOpenReportsForPost resolves every open or escalated report about a

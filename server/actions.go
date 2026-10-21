@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/pkg/errors"
 
 	"github.com/svelle/mattermost-plugin-moderation/server/store/kvstore"
@@ -71,27 +72,37 @@ func (p *Plugin) timeoutUser(actorID, channelID, targetID, durationID string) (s
 	if !ok {
 		return "", errors.New("unknown timeout duration")
 	}
-	restriction, err := p.kvstore.GetRestriction(channelID, targetID)
-	if err != nil {
+	if err := p.applyTimeout(actorID, channelID, targetID, duration.Duration, duration.Label); err != nil {
 		return "", err
 	}
-	if restriction == nil {
-		restriction = &kvstore.Restriction{}
-	}
-	restriction.TimeoutUntil = p.now() + duration.Duration.Milliseconds()
-	restriction.TimeoutLabel = duration.Label
-	restriction.ByUserID = actorID
-	restriction.CreateAt = p.now()
-	p.indexRestriction(channelID, targetID)
-	if err := p.kvstore.SetRestriction(channelID, targetID, restriction); err != nil {
-		return "", err
-	}
-	p.publishMembersChanged(channelID)
 	p.dmFromBot(targetID, fmt.Sprintf(
 		"You've been timed out in %s for %s. You stay in the channel but can't post or react until the timeout ends.",
 		p.channelLink(channelID), duration.Label,
 	))
 	return duration.Label, nil
+}
+
+// applyTimeout records a timeout once the actor's permission is settled: by
+// timeoutUser for moderators, or by the flood limit for the moderation bot.
+// Callers tell the member why.
+func (p *Plugin) applyTimeout(actorID, channelID, targetID string, duration time.Duration, label string) error {
+	restriction, err := p.kvstore.GetRestriction(channelID, targetID)
+	if err != nil {
+		return err
+	}
+	if restriction == nil {
+		restriction = &kvstore.Restriction{}
+	}
+	restriction.TimeoutUntil = p.now() + duration.Milliseconds()
+	restriction.TimeoutLabel = label
+	restriction.ByUserID = actorID
+	restriction.CreateAt = p.now()
+	p.indexRestriction(channelID, targetID)
+	if err := p.kvstore.SetRestriction(channelID, targetID, restriction); err != nil {
+		return err
+	}
+	p.publishMembersChanged(channelID)
+	return nil
 }
 
 // liftRestrictions clears any mute or timeout on a member in a channel.
@@ -154,9 +165,8 @@ func (p *Plugin) deletePostAsModerator(actorID, postID string) (string, error) {
 	return post.ChannelId, nil
 }
 
-// banUser deactivates the member server-wide, resolves their open reports in
-// the channel, and — depending on plugin settings — hides their recent
-// messages in the channel where the ban was issued.
+// banUser deactivates the member server-wide, resolves their open reports,
+// and — depending on plugin settings — hides their recent messages.
 //
 // removePicture also replaces the member's profile picture with a neutral
 // placeholder, for pictures that are offensive in themselves. The original
@@ -173,6 +183,14 @@ func (p *Plugin) banUser(actorID, channelID, targetID string, removePicture bool
 	if err != nil {
 		return "", errors.Wrap(err, "member not found")
 	}
+	return p.applyBan(actorID, channelID, target, removePicture)
+}
+
+// applyBan bans a member once the actor's permission to do so is settled:
+// by banUser for admins, or by mass-DM detection for the moderation bot.
+// channelID is where the ban was issued.
+func (p *Plugin) applyBan(actorID, channelID string, target *model.User, removePicture bool) (string, error) {
+	targetID := target.Id
 	if target.IsBot {
 		return "", errors.New("bots can't be banned with this plugin")
 	}
@@ -224,15 +242,31 @@ func (p *Plugin) banUser(actorID, channelID, targetID string, removePicture bool
 		}
 	}
 
+	username := target.Username
 	if ban.Identity != nil {
 		p.hideBannedIdentity(target, ban)
 	}
 
-	p.resolveOpenReportsForUser(channelID, targetID, "Member banned", actorID)
+	resolution := "Member banned"
+	if actorID == p.botUserID {
+		resolution = "Member suspended automatically for mass direct messages"
+	}
+	p.resolveOpenReportsForUserEverywhere(channelID, targetID, resolution, actorID)
 	p.publishMembersChanged(channelID)
 
 	if config.HideBannedMessages {
-		go p.hideMessagesFromUser(channelID, targetID, config.BannedMessageMode)
+		since := p.now() - (time.Duration(config.BannedMessageLookbackHours) * time.Hour).Milliseconds()
+		go func() {
+			hidden, conversations := p.hideMessagesEverywhere(channelID, targetID, config.BannedMessageMode, since)
+			// The bot's own bans are reported in the mass-DM alert.
+			if actorID != p.botUserID && hidden > 0 {
+				where := "1 channel or conversation"
+				if conversations != 1 {
+					where = fmt.Sprintf("%d channels and conversations", conversations)
+				}
+				p.dmFromBot(actorID, fmt.Sprintf("Hid %s from @%s in %s.", plural(int64(hidden), "message"), username, where))
+			}
+		}()
 	}
 	return warning, nil
 }
@@ -403,49 +437,159 @@ func (p *Plugin) setModerator(actorID, channelID, targetID string, moderator boo
 	return nil
 }
 
-// hideMessagesFromUser tombstones or deletes a banned member's recent
-// messages in a channel, per the plugin's banned-message settings.
-func (p *Plugin) hideMessagesFromUser(channelID, targetID, mode string) {
-	perPage := 100
-	for page := 0; page*perPage < tombstoneScanLimit; page++ {
-		postList, err := p.client.Post.GetPostsForChannel(channelID, page, perPage)
-		if err != nil {
-			p.API.LogError("Failed to scan channel posts for ban cleanup", "channel_id", channelID, "error", err.Error())
-			return
-		}
-		if postList == nil || len(postList.Order) == 0 {
-			return
-		}
-		for _, postID := range postList.Order {
-			post := postList.Posts[postID]
-			// System messages ("joined the channel") can't be edited and
-			// carry nothing the member wrote.
-			if post == nil || post.UserId != targetID || post.DeleteAt != 0 || post.IsSystemMessage() {
-				continue
-			}
-			if mode == BannedMessageModeRemove {
-				if err := p.client.Post.DeletePost(post.Id); err != nil {
-					p.API.LogError("Failed to delete banned member's post", "post_id", post.Id, "error", err.Error())
-				}
-				continue
-			}
-			tombstone := post.Clone()
-			tombstone.Message = bannedMessagePlaceholder
+// sweepPageSize and maxSweepPages bound the scan of each channel when
+// hiding a banned member's messages outside the channel the ban was issued
+// in; the scan also stops at the first page older than the lookback.
+const (
+	sweepPageSize = 100
+	maxSweepPages = 50
+)
 
-			// Strip attachments, embeds, and other rich content so the
-			// tombstone doesn't keep rendering the banned member's media.
-			tombstone.FileIds = nil
-			tombstone.Hashtags = ""
-			tombstone.Metadata = nil
-			tombstone.SetProps(model.StringInterface{tombstoneProp: true})
-			if err := p.client.Post.UpdatePost(tombstone); err != nil {
-				p.API.LogError("Failed to tombstone banned member's post", "post_id", post.Id, "error", err.Error())
-			}
+// sweepPauseEvery and sweepPause pace post updates during cleanup, so
+// hiding thousands of messages doesn't flood clients with edit events.
+var (
+	sweepPauseEvery = 50
+	sweepPause      = 200 * time.Millisecond
+)
+
+// banCleanup hides one banned member's messages and counts what it changed.
+type banCleanup struct {
+	p        *Plugin
+	targetID string
+	mode     string
+	hidden   int
+}
+
+// hideMessagesEverywhere hides a banned member's messages: the last
+// tombstoneScanLimit posts of the channel where the ban was issued, and
+// posts newer than since in every other channel and conversation they
+// belong to. It returns how many messages it hid and in how many channels.
+func (p *Plugin) hideMessagesEverywhere(issuedChannelID, targetID, mode string, since int64) (hidden, channels int) {
+	cleanup := &banCleanup{p: p, targetID: targetID, mode: mode}
+	if cleanup.hideRecent(issuedChannelID, tombstoneScanLimit/sweepPageSize, 0) > 0 {
+		channels++
+	}
+	channelIDs, err := p.userChannelIDs(targetID)
+	if err != nil {
+		p.API.LogError("Failed to list banned member's channels", "user_id", targetID, "error", err.Error())
+	}
+	for _, channelID := range channelIDs {
+		if channelID == issuedChannelID {
+			continue
 		}
-		if len(postList.Order) < perPage {
-			return
+		if cleanup.hideRecent(channelID, maxSweepPages, since) > 0 {
+			channels++
 		}
 	}
+	return cleanup.hidden, channels
+}
+
+// userChannelIDs lists every channel the member belongs to, including direct
+// and group messages, without duplicates.
+func (p *Plugin) userChannelIDs(userID string) ([]string, error) {
+	seen := map[string]bool{}
+	var ids []string
+	add := func(teamID string) error {
+		channels, err := p.client.Channel.ListForTeamForUser(teamID, userID, false)
+		if err != nil && !errors.Is(err, pluginapi.ErrNotFound) {
+			return err
+		}
+		for _, channel := range channels {
+			if !seen[channel.Id] {
+				seen[channel.Id] = true
+				ids = append(ids, channel.Id)
+			}
+		}
+		return nil
+	}
+	// Direct and group messages have no team. Every team's list repeats
+	// them, and an empty team ID still finds them for a member who isn't
+	// on any team.
+	if err := add(""); err != nil {
+		return ids, err
+	}
+	teams, err := p.client.Team.List(pluginapi.FilterTeamsByUser(userID))
+	if err != nil && !errors.Is(err, pluginapi.ErrNotFound) {
+		return ids, err
+	}
+	for _, team := range teams {
+		if err := add(team.Id); err != nil {
+			p.API.LogError("Failed to list banned member's channels in team", "team_id", team.Id, "error", err.Error())
+		}
+	}
+	return ids, nil
+}
+
+// hideRecent hides the member's messages among a channel's newest posts,
+// scanning at most maxPages pages and stopping at the first page with
+// nothing newer than since. It returns how many messages it hid.
+func (c *banCleanup) hideRecent(channelID string, maxPages int, since int64) int {
+	hidden := 0
+	for page := range maxPages {
+		postList, err := c.p.client.Post.GetPostsForChannel(channelID, page, sweepPageSize)
+		if err != nil {
+			c.p.API.LogError("Failed to scan channel posts for ban cleanup", "channel_id", channelID, "error", err.Error())
+			return hidden
+		}
+		if postList == nil || len(postList.Order) == 0 {
+			return hidden
+		}
+		newer := false
+		for _, postID := range postList.Order {
+			post := postList.Posts[postID]
+			if post == nil || post.CreateAt < since {
+				continue
+			}
+			newer = true
+			if post.UserId == c.targetID && c.hidePost(post) {
+				hidden++
+			}
+		}
+		if len(postList.Order) < sweepPageSize || !newer {
+			return hidden
+		}
+	}
+	if since > 0 {
+		c.p.API.LogWarn("Stopped hiding banned member's messages at the scan limit", "channel_id", channelID, "user_id", c.targetID, "pages", maxPages)
+	}
+	return hidden
+}
+
+// hidePost tombstones or deletes one of the member's messages and reports
+// whether it changed anything.
+func (c *banCleanup) hidePost(post *model.Post) bool {
+	// System messages ("joined the channel") can't be edited and carry
+	// nothing the member wrote. Messages already hidden are left alone, so
+	// overlapping scans don't edit them twice.
+	if post.DeleteAt != 0 || post.IsSystemMessage() || post.GetProp(tombstoneProp) == true {
+		return false
+	}
+	if c.hidden > 0 && c.hidden%sweepPauseEvery == 0 {
+		time.Sleep(sweepPause)
+	}
+	if c.mode == BannedMessageModeRemove {
+		if err := c.p.client.Post.DeletePost(post.Id); err != nil {
+			c.p.API.LogError("Failed to delete banned member's post", "post_id", post.Id, "error", err.Error())
+			return false
+		}
+		c.hidden++
+		return true
+	}
+	tombstone := post.Clone()
+	tombstone.Message = bannedMessagePlaceholder
+
+	// Strip attachments, embeds, and other rich content so the tombstone
+	// doesn't keep rendering the banned member's media.
+	tombstone.FileIds = nil
+	tombstone.Hashtags = ""
+	tombstone.Metadata = nil
+	tombstone.SetProps(model.StringInterface{tombstoneProp: true})
+	if err := c.p.client.Post.UpdatePost(tombstone); err != nil {
+		c.p.API.LogError("Failed to tombstone banned member's post", "post_id", post.Id, "error", err.Error())
+		return false
+	}
+	c.hidden++
+	return true
 }
 
 // MemberInfo is the members-tab view of one channel member.

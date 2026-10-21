@@ -51,6 +51,9 @@ type Plugin struct {
 
 	// stopIndex stops the goroutine that keeps index up to date.
 	stopIndex chan struct{}
+
+	// spamGuard holds this node's state for the spam limits.
+	spamGuard spamGuard
 }
 
 // OnActivate is invoked when the plugin is activated. If an error is returned, the plugin will be deactivated.

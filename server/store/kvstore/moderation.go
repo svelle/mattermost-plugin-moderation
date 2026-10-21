@@ -2,6 +2,7 @@ package kvstore
 
 import (
 	"strings"
+	"time"
 
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/pkg/errors"
@@ -13,6 +14,11 @@ const (
 	restrictionKeyPrefix  = "restrict_"
 	banKeyPrefix          = "ban_"
 	moderatorsKeyPrefix   = "mods_"
+
+	// Spam limit keys are the scope followed by these suffixes, for
+	// example "dmrate_<userID>" and "chblock_<userID>".
+	spamContactsKeyInfix = "rate_"
+	spamBlockKeyInfix    = "block_"
 )
 
 type Client struct {
@@ -72,6 +78,12 @@ func ParseRestrictionKey(key string) (channelID, userID string, ok bool) {
 	}
 	channelID, userID, ok = strings.Cut(rest, "_")
 	return channelID, userID, ok && channelID != "" && userID != ""
+}
+
+// ParseReportsKey returns the channel a report list key is for.
+func ParseReportsKey(key string) (channelID string, ok bool) {
+	channelID, ok = strings.CutPrefix(key, reportsKeyPrefix)
+	return channelID, ok && channelID != ""
 }
 
 // ParseBanKey returns the user a ban key is for.
@@ -164,4 +176,37 @@ func (kv Client) SaveModerators(channelID string, userIDs []string) error {
 		return errors.Wrap(err, "failed to save moderators")
 	}
 	return nil
+}
+
+func (kv Client) GetSpamContacts(scope, userID string) ([]SpamContact, error) {
+	var contacts []SpamContact
+	if err := kv.client.KV.Get(scope+spamContactsKeyInfix+userID, &contacts); err != nil {
+		return nil, errors.Wrap(err, "failed to get spam limit contacts")
+	}
+	return contacts, nil
+}
+
+func (kv Client) SaveSpamContacts(scope, userID string, contacts []SpamContact, ttl time.Duration) error {
+	if _, err := kv.client.KV.Set(scope+spamContactsKeyInfix+userID, contacts, pluginapi.SetExpiry(ttl)); err != nil {
+		return errors.Wrap(err, "failed to save spam limit contacts")
+	}
+	return nil
+}
+
+func (kv Client) GetSpamBlock(scope, userID string) (*SpamBlock, error) {
+	var block *SpamBlock
+	if err := kv.client.KV.Get(scope+spamBlockKeyInfix+userID, &block); err != nil {
+		return nil, errors.Wrap(err, "failed to get spam limit block")
+	}
+	return block, nil
+}
+
+func (kv Client) TrySetSpamBlock(scope, userID string, block *SpamBlock, ttl time.Duration) (bool, error) {
+	// An atomic set with no old value only inserts, replacing an expired
+	// value but never a live one, so one caller wins across the cluster.
+	created, err := kv.client.KV.Set(scope+spamBlockKeyInfix+userID, block, pluginapi.SetAtomic(nil), pluginapi.SetExpiry(ttl))
+	if err != nil {
+		return false, errors.Wrap(err, "failed to set spam limit block")
+	}
+	return created, nil
 }

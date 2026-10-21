@@ -27,7 +27,7 @@
                 "display_name": "Hide messages from banned members",
                 "type": "bool",
                 "default": true,
-                "help_text": "When a member is banned, hide their recent messages in the channel where the ban was issued."
+                "help_text": "When a member is banned, hide their recent messages: the last 500 messages in the channel where the ban was issued, plus their messages from the lookback period below in every other channel, direct message and group message they're in. Their open reports are resolved everywhere either way."
             },
             {
                 "key": "BannedMessageMode",
@@ -45,6 +45,13 @@
                     }
                 ],
                 "help_text": "Show a placeholder in place of each hidden message, or remove the messages entirely."
+            },
+            {
+                "key": "BannedMessageLookbackHours",
+                "display_name": "Hide messages from the last (hours)",
+                "type": "number",
+                "default": 72,
+                "help_text": "How far back to hide a banned member's messages outside the channel where the ban was issued. Between 1 and 720 hours."
             },
             {
                 "key": "HideBannedIdentity",
@@ -66,6 +73,100 @@
                 "type": "number",
                 "default": 10,
                 "help_text": "The rolling time window used for the report rate limit."
+            },
+            {
+                "key": "MassDMThreshold",
+                "display_name": "Mass direct message limit",
+                "type": "number",
+                "default": 20,
+                "help_text": "How many people a member can start direct or group messages with in the time window below. Replies in conversations they've already posted in don't count, and system admins and bots are exempt. Past the limit, new conversations are blocked and system admins are alerted. Set to 0 to turn this limit off (maximum 500)."
+            },
+            {
+                "key": "MassDMWindowMinutes",
+                "display_name": "Mass direct message window (minutes)",
+                "type": "number",
+                "default": 5,
+                "help_text": "The rolling time window for the mass direct message limit."
+            },
+            {
+                "key": "MassDMDailyThreshold",
+                "display_name": "Daily direct message limit",
+                "type": "number",
+                "default": 100,
+                "help_text": "How many people a member can start direct or group messages with in 24 hours, so a blocked member can't wait out the block and start again. Set to 0 to turn this limit off (maximum 1000)."
+            },
+            {
+                "key": "MassDMBlockMinutes",
+                "display_name": "Block new direct messages for (minutes)",
+                "type": "number",
+                "default": 60,
+                "help_text": "How long a member who hits a limit can't start new direct or group messages. They can still reply in conversations they've already started."
+            },
+            {
+                "key": "CrossPostThreshold",
+                "display_name": "Cross-posting limit",
+                "type": "number",
+                "default": 10,
+                "help_text": "How many different public or private channels a member can post in within the time window below. Past the limit, they can't post in other channels for a while and system admins are alerted; they can keep posting in the channels they already posted in. System admins and the channel's moderators are exempt. Set to 0 to turn this limit off (maximum 200)."
+            },
+            {
+                "key": "CrossPostWindowMinutes",
+                "display_name": "Cross-posting window (minutes)",
+                "type": "number",
+                "default": 5,
+                "help_text": "The rolling time window for the cross-posting limit."
+            },
+            {
+                "key": "CrossPostBlockMinutes",
+                "display_name": "Block posting in other channels for (minutes)",
+                "type": "number",
+                "default": 60,
+                "help_text": "How long a member who hits the cross-posting limit can't post in channels they haven't posted in recently."
+            },
+            {
+                "key": "SpamAction",
+                "display_name": "When a member hits the direct message or cross-posting limit",
+                "type": "radio",
+                "default": "block",
+                "options": [
+                    {
+                        "display_name": "Block and alert system admins",
+                        "value": "block"
+                    },
+                    {
+                        "display_name": "Also suspend the account (ban it automatically)",
+                        "value": "suspend"
+                    }
+                ],
+                "help_text": "Suspending deactivates and bans the account the same way an admin's ban does, including hiding its messages and username if those settings are on. Only a system admin can lift an automatic suspension. Bots are never suspended; the block still applies to them."
+            },
+            {
+                "key": "FloodThreshold",
+                "display_name": "Flood limit",
+                "type": "number",
+                "default": 15,
+                "help_text": "How many messages a member can post in one public or private channel within the time window below. The next message is refused and the member is timed out in that channel; the channel's assigned moderators get a DM. System admins and the channel's moderators are exempt. Each server in a high-availability cluster counts separately. Set to 0 to turn this limit off (maximum 200)."
+            },
+            {
+                "key": "FloodWindowSeconds",
+                "display_name": "Flood window (seconds)",
+                "type": "number",
+                "default": 30,
+                "help_text": "The rolling time window for the flood limit (maximum 600)."
+            },
+            {
+                "key": "FloodTimeoutMinutes",
+                "display_name": "Flood timeout (minutes)",
+                "type": "number",
+                "default": 10,
+                "help_text": "How long the automatic timeout for flooding a channel lasts."
+            },
+            {
+                "key": "ExemptBotsFromSpamLimits",
+                "display_name": "Exempt bots and webhooks from spam limits",
+                "type": "bool",
+                "default": true,
+                "help_text": "Leave bot accounts and incoming webhooks out of the direct message, cross-posting, and flood limits. Turn this off to limit them too, for example in case a bot's access token leaks. The moderation bot is always exempt."
             }
         ]
     }
